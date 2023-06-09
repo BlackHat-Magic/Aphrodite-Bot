@@ -1,44 +1,42 @@
 # from discord.ext import commands, ipc
 # from discord import app_commands
 from dotenv import load_dotenv
-import discord, os, openai, tiktoken, re
+from discord.ext import commands
+from discord import app_commands
+import discord, os, openai, tiktoken, re, random
 
+# set up environment variables
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
+# set up system prompt
 system_prompt = ""
 with open("system_prompt_main.txt", "r") as file:
     system_prompt += file.read()
+
+# set up thread namer
 thread_namer = ""
 with open("system_prompt_name_thread.txt", "r") as file:
     thread_namer += file.read()
 
-# class chatBot(discord.Client):
-#     def __init__(self):
-#         super().__init(intent=discord.Intents.default())
-#         self.synced = False
-
-#     async def on_ready(self):
-#         await self.wait_until_ready()
-#         if(not self.synced):
-#             await tree.sync(guild = discord.Object(id=os.getenv("GUILD_ID")))
-#             self.synced = True
-#         print(f"Logged in as {self.user}.")
-
-# client = chatBot()
-# tree = app_commands.CommandTree(client)
-
-# @tree.command(name="test", description="testing", guild=discord.Object(id=os.getenv("GUILD_ID")))
-# async def self(interaction: discord.Interaction, name:str):
-#     await interaction.response.send_message(f"Hello {name}", ephemeral=True)
+googler = ""
+with open("system_prompt_google.txt", "r") as file:
+    googler += file.read()
 
 intents = discord.Intents.default()
 intents.message_content = True
 
-client = discord.Client(intents=intents)
+# client = discord.Client(intents=intents)
+client = commands.Bot(command_prefix="h!", intents=intents)
 
 @client.event
 async def on_ready():
     print(f"Logged in as {client.user}.")
+    try:
+        synced = await client.tree.sync()
+        print(f"Synced {len(synced)} command(s)")
+    except Exception as e:
+        print(e)
 
 @client.event
 async def on_message(message):
@@ -120,7 +118,6 @@ async def on_message(message):
             for message in messages:
                 role = "user"
                 if(message.author == client.user):
-                    print("bot message")
                     role = "assistant"
                 content = message.content
                 user_ids = re.findall("<@(\d+)>", content)
@@ -152,5 +149,9 @@ async def on_message(message):
             )
             # reduce size until fits within context length
             await message.reply(response["choices"][0]["message"]["content"])
+
+@client.tree.command(name="coinflip")
+async def google(interaction: discord.Interaction):
+    await interaction.response.send_message(f"You flipped {random.choice(['heads','tails'])}!")
 
 client.run(os.getenv("DISCORD_CLIENT_TOKEN"))
