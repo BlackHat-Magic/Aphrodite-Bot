@@ -42,56 +42,55 @@ async def on_ready():
 async def on_message(message):
     if(message.author == client.user):
         return
+    if(isinstance(message.channel, discord.DMChannel)):
+        # get list of messages
+        messages = reversed([message async for message in message.channel.history(limit=100)])
+        print("Obtained channel history")
+
+        # set up empty conversation
+        gpt_convo = [{
+            "role": "system",
+            "content": system_prompt
+        }]
+
+        # add messages to conversation
+        for message in messages:
+            role = "user"
+            if(message.author == client.user):
+                role = "assistant"
+            content = message.content
+            user_ids = re.findall("<@(\d+)>", content)
+            for user_id in user_ids:
+                user = await client.fetch_user(user_id)
+                username = f"{user.name}#{user.discriminator}"
+                if(user == client.user):
+                    username = "Zoey"
+                elif(user.discriminator == "0"):
+                    username = user.name
+                content = content.replace(f"<@{user_id}>", user.name)
+            gpt_convo.append({
+                "role": role,
+                "content": content
+            })
+        print("Assembled Conversation")
+
+        # reduce conversation size until it fits within 4096 token limit with space for response.
+        encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+        while len(encoding.encode("".join([f"{message['role']} {message['content']}\n" for message in gpt_convo]))) > 3072:
+            gpt_convo.pop(1)
+        print(f"Truncated Conversation to {len(gpt_convo)} messages")
+        
+        # Obtain ClosedAI response
+        print("Obtaining ClosedAI response...")
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=gpt_convo
+        )
+
+        # reduce size until fits within context length
+        await message.channel.send(response["choices"][0]["message"]["content"])
+        return
     if(client.user in message.mentions):
-        print("Client Mentioned.")
-        if(isinstance(message.channel, discord.DMChannel)):
-            # get list of messages
-            messages = reversed([message async for message in message.channel.history(limit=100)])
-            print("Obtained channel history")
-
-            # set up empty conversation
-            gpt_convo = [{
-                "role": "system",
-                "content": system_prompt
-            }]
-
-            # add messages to conversation
-            for message in messages:
-                role = "user"
-                if(message.author == client.user):
-                    role = "assistant"
-                content = message.content
-                user_ids = re.findall("<@(\d+)>", content)
-                for user_id in user_ids:
-                    user = await client.fetch_user(user_id)
-                    username = f"{user.name}#{user.discriminator}"
-                    if(user == client.user):
-                        username = "Zoey"
-                    elif(user.discriminator == "0"):
-                        username = user.name
-                    content = content.replace(f"<@{user_id}>", user.name)
-                gpt_convo.append({
-                    "role": role,
-                    "content": content
-                })
-            print("Assembled Conversation")
-
-            # reduce conversation size until it fits within 4096 token limit with space for response.
-            encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
-            while len(encoding.encode("".join([f"{message['role']} {message['content']}\n" for message in gpt_convo]))) > 3072:
-                gpt_convo.pop(1)
-            print(f"Truncated Conversation to {len(gpt_convo)} messages")
-            
-            # Obtain ClosedAI response
-            print("Obtaining ClosedAI response...")
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=gpt_convo
-            )
-
-            # reduce size until fits within context length
-            await message.channel.send(response["choices"][0]["message"]["content"])
-            return
         if(not "Zoey" in message.channel.name):
             # parse message content
             content = message.content
