@@ -277,7 +277,7 @@ async def imagine(interaction: discord.Interaction, prompt: str):
     # set up post request
     payload = {
         "prompt": f"good quality, best quality,\n\n{prompt}",
-        "steps": 30,
+        "steps": 20,
         "negative_prompt": "blurry, out of focus, cropped, out of frame, bad quality, worst quality, bad hands, deformed, bad anatomy",
         "batch_size": 4
     }
