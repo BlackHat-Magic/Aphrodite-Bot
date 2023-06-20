@@ -320,7 +320,7 @@ async def imagine(interaction: discord.Interaction, prompt: str):
     # view.add_item(button3)
     # view.add_item(button4)
 
-    await interaction.followup.send(view=view, files=files)
+    await interaction.followup.send(files=files)
 
 # someday
 # @client.tree.command(name="roll")
