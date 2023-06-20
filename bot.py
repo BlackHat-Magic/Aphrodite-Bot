@@ -272,7 +272,7 @@ async def embed(interaction: discord.Interaction, text: str):
 
 @client.tree.command(name="imagine")
 async def imagine(interaction: discord.Interaction, prompt: str):
-    # await interaction.response.defer()
+    await interaction.defer()
     userid = interaction.user.id
     # set up post request
     payload = {
@@ -318,7 +318,7 @@ async def imagine(interaction: discord.Interaction, prompt: str):
         with open(f"{userid}-output-{i}.png", "rb") as f:
             files.append(discord.File(f, filename=f"output-{i}.png"))
 
-    await interaction.response.send_message(view=view, files=files)
+    await interaction.followup.send(view=view, files=files)
 
 # someday
 # @client.tree.command(name="roll")
