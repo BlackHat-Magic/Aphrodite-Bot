@@ -31,12 +31,15 @@ intents.message_content = True
 client = commands.Bot(command_prefix="h!", intents=intents)
 
 SD_URL = os.getenv("SD_URL")
-requests.post(
-    url=f"{SD_URL}/sdapi/v1/options",
-    json = {
-        "sd_model_checkpoint": "Baked-VAE-DreamShaper-v5.safetensors [a60cfaa90d]"
-    }
-)
+try:
+    requests.post(
+        url=f"{SD_URL}/sdapi/v1/options",
+        json = {
+            "sd_model_checkpoint": "Baked-VAE-DreamShaper-v5.safetensors [a60cfaa90d]"
+        }
+    )
+except:
+    print("No A1111 UI detected; proceeding without")
 
 @client.event
 async def on_ready():
@@ -267,8 +270,9 @@ async def embed(interaction: discord.Interaction, text: str):
             embed.set_footer(text=parsed[1])
     await interaction.response.send_message(embed=embed)
 
-@client.tree.command(name="imagime")
+@client.tree.command(name="imagine")
 async def embed(interaction: discord.Interaction, prompt: str):
+    userid = interaction.user.id
     # set up post request
     payload = {
         "prompt": f"good quality, best quality,\n\n{prompt}",
@@ -296,7 +300,7 @@ async def embed(interaction: discord.Interaction, prompt: str):
         imginfo.add_text("parameters", info)
 
         # save the image
-        image.save(f"output-{i}.png", pnginfo=pnginfo)
+        image.save(f"{userid}-output-{i}.png", pnginfo=pnginfo)
 
 # someday
 # @client.tree.command(name="roll")
