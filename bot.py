@@ -277,9 +277,10 @@ async def imagine(interaction: discord.Interaction, prompt: str):
     # set up post request
     payload = {
         "prompt": f"good quality, best quality,\n\n{prompt}",
-        "steps": 20,
+        "steps": 30,
         "negative_prompt": "blurry, out of focus, cropped, out of frame, bad quality, worst quality, bad hands, deformed, bad anatomy",
-        "batch_size": 4
+        "batch_size": 4,
+        "sampler_index": "DMP++ SDE Karras"
     }
 
     # get API response
