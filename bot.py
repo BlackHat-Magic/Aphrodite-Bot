@@ -305,18 +305,20 @@ async def imagine(interaction: discord.Interaction, prompt: str):
         # save the image
         png.save(f"{userid}-output-{i}.png", pnginfo=imginfo)
 
-        button1 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 1")
-        button2 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 2")
-        button3 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 3")
-        button4 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 4")
-
-        view = discord.ui.View()
-        view.add_item(button1)
-        view.add_item(button2)
-        view.add_item(button3)
-        view.add_item(button4)
         with open(f"{userid}-output-{i}.png", "rb") as f:
             files.append(discord.File(f, filename=f"output-{i}.png"))
+    
+
+    # button1 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 1")
+    # button2 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 2")
+    # button3 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 3")
+    # button4 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 4")
+
+    # view = discord.ui.View()
+    # view.add_item(button1)
+    # view.add_item(button2)
+    # view.add_item(button3)
+    # view.add_item(button4)
 
     await interaction.followup.send(view=view, files=files)
 
