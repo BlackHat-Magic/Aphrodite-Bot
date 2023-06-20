@@ -314,11 +314,8 @@ async def imagine(interaction: discord.Interaction, prompt: str):
         view.add_item(button4)
 
         files = []
-        # for i in range(4):
-        #     with open(f"{userid}-output-{i}.png", "rb") as f:
-        #         files.append(discord.File(f, filename=f"output-{i}.png"))
-        with open(f"{userid}-output-0.png", "rb") as f:
-            files.append(discord.File(f, filename="output-0.png"))
+        with open(f"{userid}-output-{i}.png", "rb") as f:
+            files.append(discord.File(f, filename=f"output-{i}.png"))
 
     await interaction.response.send_message(view=view, files=files)
 
