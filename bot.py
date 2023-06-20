@@ -281,9 +281,9 @@ async def imagine(interaction: discord.Interaction, prompt: str):
     }
 
     # get API response
-    response = requests.post(url=f"{SD_URL}/sdapi/v1/txt2img", json=payload).json()
-    print(f"RESPONSE: {response}")
-    print(response.keys())
+    response = requests.post(url=f"{SD_URL}/sdapi/v1/txt2img", json=payload)
+    print(response)
+    response = response.json()
 
     # save images
     for i, image in enumerate(response['images']):
