@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from discord.ext import commands
 from discord import app_commands
 from PIL import Image, PngImagePlugin
-import discord, os, openai, tiktoken, re, random, requests, json, base64
+import discord, os, openai, tiktoken, re, random, requests, json, base64, io
 
 # set up environment variables
 load_dotenv()
@@ -272,6 +272,7 @@ async def embed(interaction: discord.Interaction, text: str):
 
 @client.tree.command(name="imagine")
 async def imagine(interaction: discord.Interaction, prompt: str):
+    await interaction.response.send_message(prompt)
     userid = interaction.user.id
     # set up post request
     payload = {
@@ -282,12 +283,11 @@ async def imagine(interaction: discord.Interaction, prompt: str):
     print("payload created")
 
     # get API response
-    response = requests.post(url=f"{SD_URL}/sdapi/v1/txt2img", json=payload)
-    response = response.json()
+    response = requests.post(url=f"{SD_URL}/sdapi/v1/txt2img", json=payload).json()
     print("response obtained")
 
     # save images
-    for i, image in enumerate(response['images']):
+    for i, image in enumerate(response.get("images")):
         #open the image
         png = Image.open(io.BytesIO(base64.b64decode(i.split(",",1)[0])))
 
@@ -320,7 +320,7 @@ async def imagine(interaction: discord.Interaction, prompt: str):
             with open(f"{userid}-output-{i}.png") as f:
                 files.append(discord.File(f, filename=f"output-{i}.png"))
 
-        await interaction.response.send_message(view=view, files=files)
+    await interaction.response.send_message(view=view, files=files)
 
 # someday
 # @client.tree.command(name="roll")
