@@ -281,16 +281,14 @@ async def imagine(interaction: discord.Interaction, prompt: str):
         "negative_prompt": "blurry, out of focus, cropped, out of frame, bad quality, worst quality, bad hands, deformed, bad anatomy",
         "batch_size": 4
     }
-    print("payload created")
 
     # get API response
     response = requests.post(url=f"{SD_URL}/sdapi/v1/txt2img", json=payload).json()
-    print("response obtained")
 
     # save images
     for i, image in enumerate(response.get("images")):
         #open the image
-        png = Image.open(io.BytesIO(base64.b64decode(i.split(",",1)[0])))
+        png = Image.open(io.BytesIO(base64.b64decode(image.split(",",1)[0])))
 
         #get the image info
         png_payload = {
