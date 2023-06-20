@@ -286,6 +286,8 @@ async def imagine(interaction: discord.Interaction, prompt: str):
     response = requests.post(url=f"{SD_URL}/sdapi/v1/txt2img", json=payload).json()
 
     # save images
+
+    files = []
     for i, image in enumerate(response.get("images")):
         #open the image
         png = Image.open(io.BytesIO(base64.b64decode(image.split(",",1)[0])))
@@ -313,8 +315,6 @@ async def imagine(interaction: discord.Interaction, prompt: str):
         view.add_item(button2)
         view.add_item(button3)
         view.add_item(button4)
-
-        files = []
         with open(f"{userid}-output-{i}.png", "rb") as f:
             files.append(discord.File(f, filename=f"output-{i}.png"))
 
