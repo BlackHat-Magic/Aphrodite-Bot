@@ -272,6 +272,7 @@ async def embed(interaction: discord.Interaction, text: str):
 
 @client.tree.command(name="imagine")
 async def imagine(interaction: discord.Interaction, prompt: str):
+    await interaction.defer()
     userid = interaction.user.id
     # set up post request
     payload = {
