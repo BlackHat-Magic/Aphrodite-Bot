@@ -302,6 +302,24 @@ async def embed(interaction: discord.Interaction, prompt: str):
         # save the image
         image.save(f"{userid}-output-{i}.png", pnginfo=pnginfo)
 
+        button1 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 1")
+        button2 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 2")
+        button3 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 3")
+        button4 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 4")
+
+        view = discord.ui.View()
+        view.add_item(button1)
+        view.add_item(button2)
+        view.add_item(button3)
+        view.add_item(button4)
+
+        files = []
+        for i in range(4):
+            with open(f"{userid}-output-{i}.png") as f:
+                files.append(discord.File(f, filename=f"output-{i}.png"))
+
+        await interaction.response.send_message(view=view, files=files)
+
 # someday
 # @client.tree.command(name="roll")
 # async def roll(interaction: discord.Interaction, dice: str):
