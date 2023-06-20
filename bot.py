@@ -301,7 +301,7 @@ async def imagine(interaction: discord.Interaction, prompt: str):
         imginfo.add_text("parameters", info)
 
         # save the image
-        image.save(f"{userid}-output-{i}.png", pnginfo=pnginfo)
+        png.save(f"{userid}-output-{i}.png", pnginfo=pnginfo)
 
         button1 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 1")
         button2 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 2")
