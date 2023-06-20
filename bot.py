@@ -3,7 +3,8 @@
 from dotenv import load_dotenv
 from discord.ext import commands
 from discord import app_commands
-import discord, os, openai, tiktoken, re, random
+from PIL import Image, PngImagePlugin
+import discord, os, openai, tiktoken, re, random, requests, json, base64
 
 # set up environment variables
 load_dotenv()
@@ -28,6 +29,14 @@ intents.message_content = True
 
 # client = discord.Client(intents=intents)
 client = commands.Bot(command_prefix="h!", intents=intents)
+
+SD_URL = os.getenv("SD_URL")
+requests.post(
+    url=f"{SD_URL}/sdapi/v1/options",
+    json = {
+        "sd_model_checkpoint": "Baked-VAE-DreamShaper-v5.safetensors [a60cfaa90d]"
+    }
+)
 
 @client.event
 async def on_ready():
@@ -76,14 +85,19 @@ async def on_message(message):
 
         # reduce conversation size until it fits within 4096 token limit with space for response.
         encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
-        while len(encoding.encode("".join([f"{message['role']} {message['content']}\n" for message in gpt_convo]))) > 3072:
+        while len(encoding.encode("".join([f"{message['role']} {message['content']}\n" for message in gpt_convo]))) > 15360:
             gpt_convo.pop(1)
         print(f"Truncated Conversation to {len(gpt_convo)} messages")
+
+        if(len(encoding.encode("".join([f"{message['role']} {message['content']}\n" for message in gpt_convo]))) > 3072):
+            model = "gpt-3.5-turbo-16k"
+        else:
+            model = "gpt-3.5-turbo"
         
         # Obtain ClosedAI response
         print("Obtaining ClosedAI response...")
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model=model,
             messages=gpt_convo
         )
 
@@ -185,14 +199,19 @@ async def on_message(message):
 
             # reduce conversation size until it fits within 4096 token limit with space for response.
             encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
-            while len(encoding.encode("".join([f"{message['role']} {message['content']}\n" for message in gpt_convo]))) > 3072:
+            while len(encoding.encode("".join([f"{message['role']} {message['content']}\n" for message in gpt_convo]))) > 15360:
                 gpt_convo.pop(1)
             print(f"Truncated Conversation to {len(gpt_convo)} messages")
+
+            if(len(encoding.encode("".join([f"{message['role']} {message['content']}\n" for message in gpt_convo]))) > 3072):
+                model = "gpt-3.5-turbo-16k"
+            else:
+                model = "gpt-3.5-turbo"
             
             # Obtain ClosedAI response
             print("Obtaining ClosedAI response...")
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+                model=model,
                 messages=gpt_convo
             )
             # reduce size until fits within context length
@@ -200,7 +219,138 @@ async def on_message(message):
             return
 
 @client.tree.command(name="coinflip")
-async def google(interaction: discord.Interaction):
+async def coinflip(interaction: discord.Interaction):
     await interaction.response.send_message(f"You flipped {random.choice(['heads','tails'])}!")
+
+@client.tree.command(name="8ball")
+async def eightball(interaction: discord.Interaction, message: str):
+    options = [
+        "It is certain",
+        "It is decidedly so",
+        "Without a doubt",
+        "Yes definitiely",
+        "You may rely on it",
+        "As I see it, yes",
+        "Most likely",
+        "Outlook good",
+        "Yes",
+        "Signs point to yes",
+        "reply hazy, try again",
+        "Ask again later",
+        "Better not tell you now",
+        "Cannot predict now",
+        "Concentrate and ask again",
+        "Don't count on it",
+        "My reply is no",
+        "My sources say no",
+        "Outlook not so good",
+        "Very doubtful"
+    ]
+    await interaction.response.send_message(random.choice(options))
+
+@client.tree.command(name="embed")
+async def embed(interaction: discord.Interaction, text: str):
+    args = text.split("|")
+    title = args[0]
+    description = args[1]
+    color = discord.Color(int(args[2], 16))
+    embed = discord.Embed(title=title, description=description, color=color)
+    args = args[3:]
+    for arg in args:
+        parsed = arg.split(";")
+        if(parsed[0] == "field"):
+            embed.add_field(name=parsed[1], value=parsed[2])
+            continue
+        elif(parsed[0] == "inline-field"):
+            embed.add_field(name=parsed[1], value=parsed[2])
+        elif(parsed[0] == "footer"):
+            embed.set_footer(text=parsed[1])
+    await interaction.response.send_message(embed=embed)
+
+@client.tree.command(name="imagime")
+async def embed(interaction: discord.Interaction, prompt: str):
+    # set up post request
+    payload = {
+        "prompt": f"good quality, best quality,\n\n{prompt}",
+        "steps": 30,
+        "negative_prompt": "blurry, out of focus, cropped, out of frame, bad quality, worst quality, bad hands, deformed, bad anatomy"
+    }
+
+    # get API response
+    response = await requests.post(url=f"{SD_URL}/sdapi/v1/txt2img", json=payload).json()
+    print(response.keys())
+
+    # save images
+    for i, image in enumerate(response['images']):
+        #open the image
+        png = Image.open(io.BytesIO(base64.b64decode(i.split(",",1)[0])))
+
+        #get the image info
+        png_payload = {
+            "image": f"data:image/png;base64,{image}"
+        }
+        info = requests.post(url=f"{SD_URL}/sdapi/v1/png-info", json=png_payload).json().get("info")
+
+        #add the image metadata to the file
+        imginfo = PngImagePlugin.PngInfo()
+        imginfo.add_text("parameters", info)
+
+        # save the image
+        image.save(f"output-{i}.png", pnginfo=pnginfo)
+
+# someday
+# @client.tree.command(name="roll")
+# async def roll(interaction: discord.Interaction, dice: str):
+
+# won't be big :(
+# @client.tree.command(name="bigtext")
+# async def bigtext(interaction: discord.Interaction, thing_to_say: str):
+#     letter_dict = {
+#         "a": ":regional_indicator_a:",
+#         "b": ":regional_indicator_b:",
+#         "c": ":regional_indicator_c:",
+#         "d": ":regional_indicator_d:",
+#         "e": ":regional_indicator_e:",
+#         "f": ":regional_indicator_f:",
+#         "g": ":regional_indicator_g:",
+#         "h": ":regional_indicator_h:",
+#         "i": ":regional_indicator_i:",
+#         "j": ":regional_indicator_j:",
+#         "k": ":regional_indicator_k:",
+#         "l": ":regional_indicator_l:",
+#         "m": ":regional_indicator_m:",
+#         "n": ":regional_indicator_n:",
+#         "o": ":regional_indicator_o:",
+#         "p": ":regional_indicator_p:",
+#         "q": ":regional_indicator_q:",
+#         "r": ":regional_indicator_r:",
+#         "s": ":regional_indicator_s:",
+#         "t": ":regional_indicator_t:",
+#         "u": ":regional_indicator_u:",
+#         "v": ":regional_indicator_v:",
+#         "w": ":regional_indicator_w:",
+#         "x": ":regional_indicator_x:",
+#         "y": ":regional_indicator_y:",
+#         "z": ":regional_indicator_z:",
+#         " ": "   ",
+#         "1": ":one:",
+#         "2": ":two:",
+#         "3": ":three:",
+#         "4": ":four:",
+#         "5": ":five:",
+#         "6": ":six:",
+#         "7": ":seven:",
+#         "8": ":eight:",
+#         "9": ":nine:",
+#         "0": ":zero:",
+#         "!": ":exclamation:",
+#         "?": ":question:"
+#     }
+#     output = ""
+#     for letter in thing_to_say.casefold():
+#         output += letter_dict.get(letter, "")
+#     if(len(output) < 1):
+#         output = "Output was empty."
+#     await interaction.response.send_message(output)
 
 client.run(os.getenv("DISCORD_CLIENT_TOKEN"))
