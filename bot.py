@@ -282,6 +282,7 @@ async def embed(interaction: discord.Interaction, prompt: str):
 
     # get API response
     response = requests.post(url=f"{SD_URL}/sdapi/v1/txt2img", json=payload).json()
+    print(response)
     print(response.keys())
 
     # save images
