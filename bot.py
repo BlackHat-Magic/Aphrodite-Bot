@@ -10,7 +10,9 @@ import discord, os, openai, tiktoken, re, random, requests, json, base64, io, ru
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 runpod.api_key = os.getenv("RUNPOD_API_KEY")
-endpoint = runpod.Endpoint(os.getenv("RUNPOD_ENDPOINT_ID"))
+generic = runpod.Endpoint(os.getenv("RUNPOD_GENERIC_ENDPOINT"))
+portrait = runpod.Endpoint(os.getenv("RUNPOD_PORTRAIT_ENDPOINT"))
+charsheet = runpod.Endpoint(os.getenv("RUNPOD_CHARSHEET_ENDPOINT"))
 
 # set up system prompt
 system_prompt = ""
@@ -272,7 +274,7 @@ async def imagine(interaction: discord.Interaction, prompt: str):
     }
 
     # get API response
-    run_request = endpoint.run(payload)
+    run_request = generic.run(payload)
     while(True):
         status = run_request.status()
         print(status.casefold().capitalize().replace("_", " "))
@@ -305,6 +307,41 @@ async def imagine(interaction: discord.Interaction, prompt: str):
     # view.add_item(button2)
     # view.add_item(button3)
     # view.add_item(button4)
+
+    await interaction.followup.send(files=files)
+
+@client.tree.command(name="portrait")
+async def imagine(interaction: discord.Interaction, prompt: str):
+    await interaction.response.defer()
+    userid = interaction.user.id
+    # set up post request
+    payload = {
+        "prompt": prompt,
+        "batch_size": 4,
+    }
+
+    # get API response
+    run_request = portrait.run(payload)
+    while(True):
+        status = run_request.status()
+        if(status == "COMPLETED"):
+            print("Image Completed")
+            break
+        print(status.casefold().capitalize().replace("_", " "))
+        time.sleep(1)
+
+    # save images
+    files = []
+    output = run_request.output()
+    for i, image in enumerate(output):
+        #open the image
+        png = Image.open(io.BytesIO(base64.b64decode(image)))
+
+        # save the image
+        png.save(f"{userid}-output-{i}.png")
+
+        with open(f"{userid}-output-{i}.png", "rb") as f:
+            files.append(discord.File(f, filename=f"output-{i}.png"))
 
     await interaction.followup.send(files=files)
 
