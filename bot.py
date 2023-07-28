@@ -4,11 +4,13 @@ from dotenv import load_dotenv
 from discord.ext import commands
 from discord import app_commands
 from PIL import Image, PngImagePlugin
-import discord, os, openai, tiktoken, re, random, requests, json, base64, io
+import discord, os, openai, tiktoken, re, random, requests, json, base64, io, runpod, time
 
 # set up environment variables
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
+runpod.api_key = os.getenv("RUNPOD_API_KEY")
+endpoint = runpod.Endpoint(os.getenv("RUNPOD_ENDPOINT_ID"))
 
 # set up system prompt
 system_prompt = ""
@@ -29,17 +31,6 @@ intents.message_content = True
 
 # client = discord.Client(intents=intents)
 client = commands.Bot(command_prefix="h!", intents=intents)
-
-SD_URL = os.getenv("SD_URL")
-try:
-    requests.post(
-        url=f"{SD_URL}/sdapi/v1/options",
-        json = {
-            "sd_model_checkpoint": "Baked-VAE-DreamShaper-v5.safetensors [a60cfaa90d]"
-        }
-    )
-except:
-    print("No A1111 UI detected; proceeding without")
 
 @client.event
 async def on_ready():
@@ -276,35 +267,29 @@ async def imagine(interaction: discord.Interaction, prompt: str):
     userid = interaction.user.id
     # set up post request
     payload = {
-        "prompt": f"good quality, best quality,\n\n{prompt}",
-        "steps": 30,
-        "negative_prompt": "blurry, out of focus, cropped, out of frame, bad quality, worst quality, bad hands, deformed, bad anatomy",
+        "prompt": prompt,
         "batch_size": 4,
-        "sampler_index": "DPM++ SDE Karras"
     }
 
     # get API response
-    response = requests.post(url=f"{SD_URL}/sdapi/v1/txt2img", json=payload).json()
+    run_request = endpoint.run(payload)
+    while(True):
+        status = run_request.status()
+        print(status.casefold().capitalize().replace("_", " "))
+        if(status == "COMPLETED"):
+            print("Image Completed")
+            break
+        time.sleep(1)
 
     # save images
-
     files = []
-    for i, image in enumerate(response.get("images")):
+    output = run_request.output()
+    for i, image in enumerate(output):
         #open the image
-        png = Image.open(io.BytesIO(base64.b64decode(image.split(",",1)[0])))
-
-        #get the image info
-        png_payload = {
-            "image": f"data:image/png;base64,{image}"
-        }
-        info = requests.post(url=f"{SD_URL}/sdapi/v1/png-info", json=png_payload).json().get("info")
-
-        #add the image metadata to the file
-        imginfo = PngImagePlugin.PngInfo()
-        imginfo.add_text("parameters", info)
+        png = Image.open(io.BytesIO(base64.b64decode(image)))
 
         # save the image
-        png.save(f"{userid}-output-{i}.png", pnginfo=imginfo)
+        png.save(f"{userid}-output-{i}.png")
 
         with open(f"{userid}-output-{i}.png", "rb") as f:
             files.append(discord.File(f, filename=f"output-{i}.png"))
