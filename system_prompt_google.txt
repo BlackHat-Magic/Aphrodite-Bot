@@ -1,1 +1,0 @@
-What pieces of information are required to answer the user's question? Answer with each piece of information on its own newline, formatted as a google search query.
