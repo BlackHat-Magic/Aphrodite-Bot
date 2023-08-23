@@ -215,22 +215,97 @@ async def on_message(message):
             return
 
 @client.tree.command(name="imagine")
-async def imagine(interaction: discord.Interaction, prompt: str):
-    await interaction.response.defer()
+async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: str = None):
+    # deal with message
     userid = interaction.user.id
+    embed = discord.Embed(
+        title="Image Job",
+        color=discord.Color.from_rgb(0, 255, 255)
+    )
+    embed.add_field(
+        name="Status",
+        value="In queue...",
+        inline=True
+    )
+    embed.add_field(
+        name="Prompt",
+        value=prompt,
+        inline=False
+    )
+    embed.add_field(
+        name="Desired Aspect Ratio",
+        value=aspect_ratio,
+        inline=True
+    )
+    await interaction.response.send_message(
+        f"<@{userid}> Request processing...",
+        embed=embed
+    )
+    initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
+
+    # get aspect ratio
+    desired_ratio = 1.0
+    if(aspect_ratio and not re.match(r'^\d+:\d+$', aspect_ratio)):
+        await initial_message.edit(
+            contents="Invalid aspect ratio. Format as `width:height` (e.g. 16:9, 1:1). Numbers must be integers.",
+            embeds=None
+        )
+        return
+    if(aspect_ratio != None):
+        desired_ratio = int(aspect_ratio.split(":")[0]) / int(aspect_ratio.split(":")[1])
+    supported_ratios = [
+        [0.42857, "9:21",  (640, 1536)], 
+        [0.50000, "1:2",   (704, 1472)], 
+        [0.56250, "9:16",  (768, 1344)], 
+        [0.66667, "2:3",   (832, 1280)], 
+        [0.68421, "13:19", (832, 1216)], 
+        [0.72727, "8:11",  (896, 1216)], 
+        [0.75000, "3:4",   (896, 1152)],
+        [0.77778, "7:9",   (896, 1152)], 
+        [1.00000, "1:1",   (1024, 1024)], 
+        [1.28571, "9:7",   (1152, 896)], 
+        [1.33333, "4:3",   (1152, 896)],
+        [1.37500, "11:8",  (1216, 896)],
+        [1.46154, "19:13", (1216, 832)],
+        [1.50000, "3:2",   (1280, 832)],
+        [1.77778, "16:9",  (1344, 768)],
+        [2.00000, "2:1",   (1472, 704)],
+        [2.33333, "21:9",  (1536, 640)]
+    ]
+    res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))
+    width, height = res_info[2]
+    embed.add_field(
+        name="Quantized Aspect Ratio",
+        value=res_info[1],
+        inline=True
+    )
+    embed.add_field(
+        name="Resolution",
+        value=f"{width}x{height}",
+        inline=True
+    )
+    await initial_message.edit(embed=embed)
+
     # set up post request
     payload = {
         "prompt": prompt,
         "batch_size": 4,
+        "width": width,
+        "height": height
     }
 
     # get API response
     run_request = generic.run(payload)
+    progress_started = False
     while(True):
         status = run_request.status()
-        print(status.casefold().capitalize().replace("_", " "))
+        if(status == "IN_PROGRESS" and not progress_started):
+            embed.set_field_at(0, name="Status", value="In progress...")
+            progress_started = True
+            await initial_message.edit(embed=embed)
         if(status == "COMPLETED"):
-            print("Image Completed")
+            embed.set_field_at(0, name="Status", value="Loading images...")
+            await initial_message.edit(embed=embed)
             break
         await asyncio.sleep(1)
 
@@ -246,7 +321,6 @@ async def imagine(interaction: discord.Interaction, prompt: str):
 
         with open(f"{userid}-output-{i}.png", "rb") as f:
             files.append(discord.File(f, filename=f"output-{i}.png"))
-    
 
     # button1 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 1")
     # button2 = discord.ui.Button(style=discord.ButtonStyle.primary, label="Upscale 2")
@@ -259,7 +333,15 @@ async def imagine(interaction: discord.Interaction, prompt: str):
     # view.add_item(button3)
     # view.add_item(button4)
 
-    await interaction.followup.send(files=files)
+    embed.set_field_at(0, name="Status", value="Completed")
+    await initial_message.edit(
+        content="Request completed.",
+        embed=embed
+    )
+    await initial_message.reply(
+        f"<@{userid}>",
+        files=files
+    )
 
 @client.tree.command(name="portrait")
 async def imagine(interaction: discord.Interaction, prompt: str):
@@ -277,7 +359,7 @@ async def imagine(interaction: discord.Interaction, prompt: str):
         status = run_request.status()
         if(status == "COMPLETED"):
             break
-        time.sleep(1)
+        asyncio.sleep(1)
 
     # save images
     files = []
