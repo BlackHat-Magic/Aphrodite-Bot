@@ -309,27 +309,29 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
             break
         await asyncio.sleep(1)
 
-    # save images
-    files = []
+    # send images
     output = run_request.output()
-    for i, image in enumerate(output):
-        #open the image
-        png = Image.open(io.BytesIO(base64.b64decode(image)))
+    grid = Image.new("RGB", (width * 2, height * 2))
+    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[0]))), (0, 0))
+    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[1]))), (width, 0))
+    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[2]))), (0, height))
+    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[3]))), (width, height))
 
-        # save the image
-        png.save(f"{userid}-output-{i}.png")
-
-        with open(f"{userid}-output-{i}.png", "rb") as f:
-            files.append(discord.File(f, filename=f"output-{i}.png"))
+    sent_file = None
+    with io.BytesIO() as image_binary:
+        grid.save(image_binary, "PNG")
+        image_binary.seek(0)
+        sent_file = discord.File(fp=image_binary, filename="grid.png")
 
     embed.set_field_at(0, name="Status", value="Completed")
     await initial_message.edit(
         content="Request completed.",
-        embed=embed
+        embed=None
     )
     await initial_message.reply(
         f"<@{userid}>",
-        files=files
+        file=sent_file,
+        embed=embed
     )
 
 @client.tree.command(name="portrait")
@@ -426,27 +428,29 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
             break
         await asyncio.sleep(1)
 
-    # save images
-    files = []
+    # send images
     output = run_request.output()
-    for i, image in enumerate(output):
-        #open the image
-        png = Image.open(io.BytesIO(base64.b64decode(image)))
+    grid = Image.new("RGB", (width * 2, height * 2))
+    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[0]))), (0, 0))
+    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[1]))), (width, 0))
+    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[2]))), (0, height))
+    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[3]))), (width, height))
 
-        # save the image
-        png.save(f"{userid}-output-{i}.png")
-
-        with open(f"{userid}-output-{i}.png", "rb") as f:
-            files.append(discord.File(f, filename=f"output-{i}.png"))
+    sent_file = None
+    with io.BytesIO() as image_binary:
+        grid.save(image_binary, "PNG")
+        image_binary.seek(0)
+        sent_file = discord.File(fp=image_binary, filename="grid.png")
 
     embed.set_field_at(0, name="Status", value="Completed")
     await initial_message.edit(
         content="Request completed.",
-        embed=embed
+        embed=None
     )
     await initial_message.reply(
         f"<@{userid}>",
-        files=files
+        file=sent_file,
+        embed=embed
     )
 
 # someday
