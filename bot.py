@@ -2,7 +2,8 @@
 # from discord import app_commands
 from dotenv import load_dotenv
 from discord.ext import commands
-from discord import app_commands
+from discord import app_commands, ButtonStyle
+from discord.ui import Button
 from PIL import Image, PngImagePlugin
 import discord, os, openai, tiktoken, re, random, requests, json, base64, io, runpod, time, asyncio
 
@@ -13,6 +14,7 @@ runpod.api_key = os.getenv("RUNPOD_API_KEY")
 generic = runpod.Endpoint(os.getenv("RUNPOD_GENERIC_ENDPOINT"))
 portrait = runpod.Endpoint(os.getenv("RUNPOD_PORTRAIT_ENDPOINT"))
 charsheet = runpod.Endpoint(os.getenv("RUNPOD_CHARSHEET_ENDPOINT"))
+upscale = runpod.Endpoint(os.getenv("RUNPOD_UPSCALE_ENDPOINT"))
 
 # set up system prompt
 system_prompt = ""
@@ -245,7 +247,7 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
 
     # get aspect ratio
     desired_ratio = 1.0
-    if(aspect_ratio and not re.match(r'^\d+:\d+$', aspect_ratio)):
+    if(aspect_ratio and not re.match(r"^\d+:\d+$", aspect_ratio)):
         await initial_message.edit(
             contents="Invalid aspect ratio. Format as `width:height` (e.g. 16:9, 1:1). Numbers must be integers.",
             embeds=None
@@ -323,15 +325,17 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
         image_binary.seek(0)
         sent_file = discord.File(fp=image_binary, filename="grid.png")
 
+    await initial_message.add_files(sent_file)
     embed.set_field_at(0, name="Status", value="Completed")
+    view = discord.ui.View()
+    view.add_item(Button(style=ButtonStyle.primary, label="U1", custom_id="upscale_1"))
+    view.add_item(Button(style=ButtonStyle.primary, label="U2", custom_id="upscale_2"))
+    view.add_item(Button(style=ButtonStyle.primary, label="U3", custom_id="upscale_3"))
+    view.add_item(Button(style=ButtonStyle.primary, label="U4", custom_id="upscale_4"))
     await initial_message.edit(
         content="Request completed.",
-        embed=None
-    )
-    await initial_message.reply(
-        f"<@{userid}>",
-        file=sent_file,
-        embed=embed
+        embed=embed,
+        view=view
     )
 
 @client.tree.command(name="portrait")
@@ -364,7 +368,7 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
 
     # get aspect ratio
     desired_ratio = 1.0
-    if(aspect_ratio and not re.match(r'^\d+:\d+$', aspect_ratio)):
+    if(aspect_ratio and not re.match(r"^\d+:\d+$", aspect_ratio)):
         await initial_message.edit(
             contents="Invalid aspect ratio. Format as `width:height` (e.g. 16:9, 1:1). Numbers must be integers.",
             embeds=None
@@ -430,11 +434,11 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
 
     # send images
     output = run_request.output()
-    grid = Image.new("RGB", (width * 2, height * 2))
+    grid = Image.new("RGB", (width, height))
     grid.paste(Image.open(io.BytesIO(base64.b64decode(output[0]))), (0, 0))
-    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[1]))), (width, 0))
-    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[2]))), (0, height))
-    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[3]))), (width, height))
+    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[1]))), (int(width / 2), 0))
+    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[2]))), (0, int(height / 2)))
+    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[3]))), (int(width / 2), int(height / 2)))
 
     sent_file = None
     with io.BytesIO() as image_binary:
@@ -442,18 +446,125 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
         image_binary.seek(0)
         sent_file = discord.File(fp=image_binary, filename="grid.png")
 
+    await initial_message.add_files(sent_file)
     embed.set_field_at(0, name="Status", value="Completed")
+    view = discord.ui.View()
+    view.add_item(Button(style=ButtonStyle.primary, label="U1", custom_id="upscale_1"))
+    view.add_item(Button(style=ButtonStyle.primary, label="U2", custom_id="upscale_2"))
+    view.add_item(Button(style=ButtonStyle.primary, label="U3", custom_id="upscale_3"))
+    view.add_item(Button(style=ButtonStyle.primary, label="U4", custom_id="upscale_4"))
     await initial_message.edit(
         content="Request completed.",
-        embed=None
-    )
-    await initial_message.reply(
-        f"<@{userid}>",
-        file=sent_file,
-        embed=embed
+        embed=embed,
+        view=view
     )
 
-# someday
+@client.event
+async def on_interaction(interaction):
+    if(interaction.type == discord.InteractionType.component):
+        # get interaction info
+        custom_id = interaction.data["custom_id"]
+        print(custom_id)
+        message = interaction.message
+        userid = interaction.user.id
+
+        # if it's an upscale interaction, upscale
+        if(re.match(f"^upscale_\d$", custom_id)):
+            # initial response
+            fields = message.embeds[0].fields
+            prompt = ""
+            for field in fields:
+                if(field.name == "Prompt"):
+                    prompt = field.value
+                    break
+            embed = discord.Embed(
+                title="Upscale Job",
+                color=discord.Color.from_rgb(128, 0, 255)
+            )
+            embed.add_field(
+                name="Status",
+                value="In queue...",
+                inline=True
+            )
+            embed.add_field(
+                name="Prompt",
+                value=prompt,
+                inline=False
+            )
+            await interaction.response.send_message(
+                f"<@{userid}> Upscaling image...",
+                embed=embed
+            )
+            initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
+
+            # grab image
+            image = Image.open(io.BytesIO(requests.get(message.attachments[0].url).content))
+
+            # ypdate embed
+            embed.add_field(
+                name="Original Resolution",
+                value=f"{int(image.width / 2)}x{int(image.height / 2)}",
+                inline=True
+            )
+            embed.add_field(
+                name="New Resolution",
+                value=f"{image.width}x{image.height}",
+                inline=True
+            )
+            initial_message.edit(embed=embed)
+
+            # crop image
+            top, left, right, bottom = 0, 0, int(image.width / 2), int(image.height / 2)
+            if(custom_id == "upscale_2"):
+                left, right = int(image.width / 2), image.width
+            if(custom_id == "upscale_3"):
+                top, bottom = int(image.height / 2), image.height
+            if(custom_id == "upscale_4"):
+                top, left, right, bottom = int(image.height / 2), int(image.width / 2), image.width, image.height
+            cropped_image = image.crop((left, top, right, bottom))
+
+            # encode b64
+            sent_file = None
+            with io.BytesIO() as image_binary:
+                cropped_image.save(image_binary, "PNG")
+                sent_file = base64.b64encode(image_binary.getvalue()).decode("utf-8")
+            payload = {
+                "prompt": prompt,
+                "image": sent_file
+            }
+
+            # send runpod request
+            run_request = upscale.run(payload)
+            progress_started = False
+            while(True):
+                status = run_request.status()
+                if(status == "IN_PROGRESS" and not progress_started):
+                    embed.set_field_at(0, name="Status", value="In progress...")
+                    progress_started = True
+                    await initial_message.edit(embed=embed)
+                if(status == "COMPLETED"):
+                    embed.set_field_at(0, name="Status", value="Loading images...")
+                    await initial_message.edit(embed=embed)
+                    break
+                await asyncio.sleep(1)
+
+            # receive output
+            output = Image.open(io.BytesIO(base64.b64decode(run_request.output[0])))
+
+            sent_file = None
+            with io.BytesIO() as image_binary:
+                grid.save(image_binary, "PNG")
+                image_binary.seek(0)
+                sent_file = discord.File(fp=image_binary, filename="grid.png")
+
+            await initial_message.add_files(sent_file)
+            embed.set_field_at(0, name="Status", value="Completed")
+            await initial_message.edit(
+                content="Request completed.",
+                embed=embed
+            )
+
+# someday (maybe not)
 # @client.tree.command(name="roll")
 # async def roll(interaction: discord.Interaction, dice: str):
 
