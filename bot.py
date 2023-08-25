@@ -464,7 +464,6 @@ async def on_interaction(interaction):
     if(interaction.type == discord.InteractionType.component):
         # get interaction info
         custom_id = interaction.data["custom_id"]
-        print(custom_id)
         message = interaction.message
         userid = interaction.user.id
 
@@ -511,7 +510,7 @@ async def on_interaction(interaction):
                 value=f"{image.width}x{image.height}",
                 inline=True
             )
-            initial_message.edit(embed=embed)
+            await initial_message.edit(embed=embed)
 
             # crop image
             top, left, right, bottom = 0, 0, int(image.width / 2), int(image.height / 2)
@@ -549,11 +548,11 @@ async def on_interaction(interaction):
                 await asyncio.sleep(1)
 
             # receive output
-            output = Image.open(io.BytesIO(base64.b64decode(run_request.output[0])))
+            output = Image.open(io.BytesIO(base64.b64decode(run_request.output()[0])))
 
             sent_file = None
             with io.BytesIO() as image_binary:
-                grid.save(image_binary, "PNG")
+                output.save(image_binary, "PNG")
                 image_binary.seek(0)
                 sent_file = discord.File(fp=image_binary, filename="grid.png")
 
