@@ -217,7 +217,7 @@ async def on_message(message):
             return
 
 @client.tree.command(name="imagine")
-async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: str = None):
+async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: str = None, negative_prompt: str = None):
     # deal with message
     userid = interaction.user.id
     embed = discord.Embed(
@@ -232,6 +232,15 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
     embed.add_field(
         name="Prompt",
         value=prompt,
+        inline=False
+    )
+    if(negative_prompt == None):
+        displayed_negative_prompt = "Default (\"bad quality, worst quality, blurry, out of focus, cropped, out of frame, deformed, bad hands, bad anatomy\")"
+    else:
+        displayed_negative_prompt = negative_prompt
+    embed.add_field(
+        name="Negative Prompt",
+        value=displayed_negative_prompt,
         inline=False
     )
     embed.add_field(
@@ -289,12 +298,21 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
     await initial_message.edit(embed=embed)
 
     # set up post request
-    payload = {
-        "prompt": prompt,
-        "batch_size": 4,
-        "width": width,
-        "height": height
-    }
+    if(negative_prompt == None):
+        payload = {
+            "prompt": prompt,
+            "batch_size": 4,
+            "width": width,
+            "height": height
+        }
+    else:
+        payload = {
+            "prompt": prompt,
+            "batch_size": 4,
+            "width": width,
+            "height": height,
+            "negative_prompt": negative_prompt
+        }
 
     # get API response
     run_request = generic.run(payload)
