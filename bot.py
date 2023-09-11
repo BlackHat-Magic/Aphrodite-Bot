@@ -217,7 +217,7 @@ async def on_message(message):
             return
 
 @client.tree.command(name="imagine")
-async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: str = None, negative_prompt: str = None, repeat: str = None):
+async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: str = None, negative_prompt: str = None, repeat: str = "1"):
     try:
         repeat = int(repeat)
     except:
