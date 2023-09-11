@@ -352,7 +352,6 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
     while(True):
         booleans = [False for repetition in range(repeat)]
         uploaded_image = False
-        boolean_total = False
         for i, repetition in enumerate(repetitions):
             initial_message = repetition["message"]
             status = repetition["runpod_request"].status()
@@ -360,10 +359,10 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
             if(status == "IN_PROGRESS" and not repetition["progress_started"]):
                 embed.set_field_at(0, name="Status", value="In progress...")
                 repetition["progress_started"] = True
-                booleans[i] = True
                 await initial_message.edit(embed=embed)
             if(status == "COMPLETED" and not repetition["uploaded"]):
                 uploaded_image = True
+                booleans[i] = True
                 embed.set_field_at(0, name="Status", value="Loading images...")
                 await initial_message.edit(embed=embed)
 
