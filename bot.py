@@ -5,6 +5,7 @@ from discord.ext import commands
 from discord import app_commands, ButtonStyle
 from discord.ui import Button
 from PIL import Image, PngImagePlugin
+from concurrent.futures import ThreadPoolExecutor
 import discord, os, openai, tiktoken, re, random, requests, json, base64, io, runpod, time, asyncio
 
 # set up environment variables
@@ -217,7 +218,7 @@ async def on_message(message):
             return
 
 @client.tree.command(name="imagine")
-async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: str = None, negative_prompt: str = None, repeat: str = "1"):
+async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt: str = None, aspect_ratio: str = None, repeat: str = "1"):
     try:
         repeat = int(repeat)
     except:
@@ -229,6 +230,12 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
     if(repeat > 8):
         await interaction.response.send_message(
             "Too many repeats requested; aborting...",
+            ephemeral=True
+        )
+        return
+    if(repeat < 1):
+        await interaction.response.send_message(
+            "Invalid repeat number specified; aborting...",
             ephemeral=True
         )
         return
@@ -348,11 +355,8 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
             "uploaded": False
         })
 
-    # Wait for API response
-    while(True):
-        booleans = [False for repetition in range(repeat)]
-        uploaded_image = False
-        for i, repetition in enumerate(repetitions):
+    async def awaitResponse(repetition):
+        while(True):
             initial_message = repetition["message"]
             status = repetition["runpod_request"].status()
             embed = repetition["embed"]
@@ -361,8 +365,6 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
                 repetition["progress_started"] = True
                 await initial_message.edit(embed=embed)
             if(status == "COMPLETED" and not repetition["uploaded"]):
-                uploaded_image = True
-                booleans[i] = True
                 embed.set_field_at(0, name="Status", value="Loading images...")
                 await initial_message.edit(embed=embed)
 
@@ -392,131 +394,192 @@ async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: s
                     view=view
                 )
                 repetition["uploaded"] = True
-        if(all(booleans)):
-            break
-        if(not uploaded_image):
+                break
             await asyncio.sleep(1)
+    
+    await asyncio.gather(*(awaitResponse(repetition) for repetition in repetitions))
 
 @client.tree.command(name="portrait")
-async def imagine(interaction: discord.Interaction, prompt: str, aspect_ratio: str = None):
-    userid = interaction.user.id
-    embed = discord.Embed(
-        title="Portrait Job",
-        color=discord.Color.from_rgb(0, 255, 255)
-    )
-    embed.add_field(
-        name="Status",
-        value="In queue...",
-        inline=True
-    )
-    embed.add_field(
-        name="Prompt",
-        value=prompt,
-        inline=False
-    )
-    embed.add_field(
-        name="Desired Aspect Ratio",
-        value=aspect_ratio,
-        inline=True
-    )
-    await interaction.response.send_message(
-        f"<@{userid}> Request processing...",
-        embed=embed
-    )
-    initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
-
-    # get aspect ratio
-    desired_ratio = 1.0
-    if(aspect_ratio and not re.match(r"^\d+:\d+$", aspect_ratio)):
-        await initial_message.edit(
-            contents="Invalid aspect ratio. Format as `width:height` (e.g. 16:9, 1:1). Numbers must be integers.",
-            embeds=None
+async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt: str = None, aspect_ratio: str = None, repeat: str="1"):
+    try:
+        repeat = int(repeat)
+    except:
+        await interaction.response.send_message(
+            "Invalid repeat number specified; aborting...",
+            ephemeral=True
         )
         return
-    if(aspect_ratio != None):
-        desired_ratio = int(aspect_ratio.split(":")[0]) / int(aspect_ratio.split(":")[1])
-    supported_ratios = [
-        [0.42857, "9:21",  (640, 1536)], 
-        [0.50000, "1:2",   (704, 1472)], 
-        [0.56250, "9:16",  (768, 1344)], 
-        [0.66667, "2:3",   (832, 1280)], 
-        [0.68421, "13:19", (832, 1216)], 
-        [0.72727, "8:11",  (896, 1216)], 
-        [0.75000, "3:4",   (896, 1152)],
-        [0.77778, "7:9",   (896, 1152)], 
-        [1.00000, "1:1",   (1024, 1024)], 
-        [1.28571, "9:7",   (1152, 896)], 
-        [1.33333, "4:3",   (1152, 896)],
-        [1.37500, "11:8",  (1216, 896)],
-        [1.46154, "19:13", (1216, 832)],
-        [1.50000, "3:2",   (1280, 832)],
-        [1.77778, "16:9",  (1344, 768)],
-        [2.00000, "2:1",   (1472, 704)],
-        [2.33333, "21:9",  (1536, 640)]
-    ]
-    res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))
-    width, height = res_info[2]
-    embed.add_field(
-        name="Quantized Aspect Ratio",
-        value=res_info[1],
-        inline=True
-    )
-    embed.add_field(
-        name="Resolution",
-        value=f"{int(width / 2)}x{int(height / 2)}",
-        inline=True
-    )
-    await initial_message.edit(embed=embed)
+    if(repeat > 8):
+        await interaction.response.send_message(
+            "Too many repeats requested; aborting...",
+            ephemeral=True
+        )
+        return
+    if(repeat < 1):
+        await interaction.response.send_message(
+            "Invalid repeat number specified; aborting...",
+            ephemeral=True
+        )
+        return
+    userid = interaction.user.id
+    repetitions = []
 
-    # set up post request
-    payload = {
-        "prompt": prompt,
-        "batch_size": 4,
-        "width": int(width / 2),
-        "height": int(height / 2)
-    }
+    for i in range(repeat):
+        embed = discord.Embed(
+            title="Image Job",
+            color=discord.Color.from_rgb(0, 255, 255)
+        )
+        embed.add_field(
+            name="Status",
+            value="In queue...",
+            inline=True
+        )
+        embed.add_field(
+            name="Prompt",
+            value=prompt,
+            inline=False
+        )
+        if(negative_prompt == None):
+            displayed_negative_prompt = "Default (\"bad quality, worst quality, blurry, out of focus, cropped, out of frame, deformed, bad hands, bad anatomy\")"
+        else:
+            displayed_negative_prompt = negative_prompt
+        embed.add_field(
+            name="Negative Prompt",
+            value=displayed_negative_prompt,
+            inline=False
+        )
+        embed.add_field(
+            name="Desired Aspect Ratio",
+            value=aspect_ratio,
+            inline=True
+        )
+        if(i == 0):
+            await interaction.response.send_message(
+                f"<@{userid}> Request processing...",
+                embed=embed
+            )
+        else:
+            await repetitions[-1]["message"].reply(
+                f"<@{userid}> Request processing...",
+                embed=embed
+            )
+        initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
 
-    # get API response
-    run_request = portrait.run(payload)
-    progress_started = False
-    while(True):
-        status = run_request.status()
-        if(status == "IN_PROGRESS" and not progress_started):
-            embed.set_field_at(0, name="Status", value="In progress...")
-            progress_started = True
-            await initial_message.edit(embed=embed)
-        if(status == "COMPLETED"):
-            embed.set_field_at(0, name="Status", value="Loading images...")
-            await initial_message.edit(embed=embed)
-            break
-        await asyncio.sleep(1)
+        # get aspect ratio
+        desired_ratio = 1.0
+        if(aspect_ratio and not re.match(r"^\d+:\d+$", aspect_ratio)):
+            await initial_message.edit(
+                contents="Invalid aspect ratio. Format as `width:height` (e.g. 16:9, 1:1). Numbers must be integers.",
+                embeds=None
+            )
+            return
+        if(aspect_ratio != None):
+            desired_ratio = int(aspect_ratio.split(":")[0]) / int(aspect_ratio.split(":")[1])
+        supported_ratios = [
+            [0.42857, "9:21",  (640, 1536)], 
+            [0.50000, "1:2",   (704, 1472)], 
+            [0.56250, "9:16",  (768, 1344)], 
+            [0.66667, "2:3",   (832, 1280)], 
+            [0.68421, "13:19", (832, 1216)], 
+            [0.72727, "8:11",  (896, 1216)], 
+            [0.75000, "3:4",   (896, 1152)],
+            [0.77778, "7:9",   (896, 1152)], 
+            [1.00000, "1:1",   (1024, 1024)], 
+            [1.28571, "9:7",   (1152, 896)], 
+            [1.33333, "4:3",   (1152, 896)],
+            [1.37500, "11:8",  (1216, 896)],
+            [1.46154, "19:13", (1216, 832)],
+            [1.50000, "3:2",   (1280, 832)],
+            [1.77778, "16:9",  (1344, 768)],
+            [2.00000, "2:1",   (1472, 704)],
+            [2.33333, "21:9",  (1536, 640)]
+        ]
+        res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))
+        width, height = res_info[2]
+        embed.add_field(
+            name="Quantized Aspect Ratio",
+            value=res_info[1],
+            inline=True
+        )
+        embed.add_field(
+            name="Resolution",
+            value=f"{int(width / 2)}x{int(height / 2)}",
+            inline=True
+        )
+        await initial_message.edit(embed=embed)
 
-    # send images
-    output = run_request.output()
-    grid = Image.new("RGB", (width, height))
-    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[0]))), (0, 0))
-    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[1]))), (int(width / 2), 0))
-    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[2]))), (0, int(height / 2)))
-    grid.paste(Image.open(io.BytesIO(base64.b64decode(output[3]))), (int(width / 2), int(height / 2)))
+        # set up post request
+        if(negative_prompt == None):
+            payload = {
+                "prompt": prompt,
+                "batch_size": 4,
+                "width": width,
+                "height": height
+            }
+        else:
+            payload = {
+                "prompt": prompt,
+                "batch_size": 4,
+                "width": width,
+                "height": height,
+                "negative_prompt": negative_prompt
+            }
 
-    sent_file = None
-    with io.BytesIO() as image_binary:
-        grid.save(image_binary, "PNG")
-        image_binary.seek(0)
-        sent_file = discord.File(fp=image_binary, filename="grid.png")
+        # get API response
 
-    await initial_message.add_files(sent_file)
-    embed.set_field_at(0, name="Status", value="Completed")
-    view = discord.ui.View()
-    view.add_item(Button(style=ButtonStyle.primary, label="U1", custom_id="upscale_1"))
-    view.add_item(Button(style=ButtonStyle.primary, label="U2", custom_id="upscale_2"))
-    view.add_item(Button(style=ButtonStyle.primary, label="U3", custom_id="upscale_3"))
-    view.add_item(Button(style=ButtonStyle.primary, label="U4", custom_id="upscale_4"))
-    await initial_message.edit(
-        content="Request completed.",
-        embed=embed,
-        view=view
-    )
+        run_request = portrait.run(payload)
+
+        repetitions.append({
+            "message": initial_message,
+            "runpod_request": run_request,
+            "progress_started": False,
+            "embed": embed,
+            "uploaded": False
+        })
+
+    async def awaitResponse(repetition):
+        while(True):
+            initial_message = repetition["message"]
+            status = repetition["runpod_request"].status()
+            embed = repetition["embed"]
+            if(status == "IN_PROGRESS" and not repetition["progress_started"]):
+                embed.set_field_at(0, name="Status", value="In progress...")
+                repetition["progress_started"] = True
+                await initial_message.edit(embed=embed)
+            if(status == "COMPLETED" and not repetition["uploaded"]):
+                embed.set_field_at(0, name="Status", value="Loading images...")
+                await initial_message.edit(embed=embed)
+
+                output = repetition["runpod_request"].output()
+                grid = Image.new("RGB", (width * 2, height * 2))
+                grid.paste(Image.open(io.BytesIO(base64.b64decode(output[0]))), (0, 0))
+                grid.paste(Image.open(io.BytesIO(base64.b64decode(output[1]))), (width, 0))
+                grid.paste(Image.open(io.BytesIO(base64.b64decode(output[2]))), (0, height))
+                grid.paste(Image.open(io.BytesIO(base64.b64decode(output[3]))), (width, height))
+
+                sent_file = None
+                with io.BytesIO() as image_binary:
+                    grid.save(image_binary, "PNG")
+                    image_binary.seek(0)
+                    sent_file = discord.File(fp=image_binary, filename="grid.png")
+
+                await initial_message.add_files(sent_file)
+                embed.set_field_at(0, name="Status", value="Completed")
+                view = discord.ui.View()
+                view.add_item(Button(style=ButtonStyle.primary, label="U1", custom_id="upscale_1"))
+                view.add_item(Button(style=ButtonStyle.primary, label="U2", custom_id="upscale_2"))
+                view.add_item(Button(style=ButtonStyle.primary, label="U3", custom_id="upscale_3"))
+                view.add_item(Button(style=ButtonStyle.primary, label="U4", custom_id="upscale_4"))
+                await initial_message.edit(
+                    content=f"<@{userid}> Request completed.",
+                    embed=embed,
+                    view=view
+                )
+                repetition["uploaded"] = True
+                break
+            await asyncio.sleep(1)
+    
+    await asyncio.gather(*(awaitResponse(repetition) for repetition in repetitions))
 
 @client.event
 async def on_interaction(interaction):
