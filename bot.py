@@ -6,7 +6,7 @@ from discord import app_commands, ButtonStyle
 from discord.ui import Button
 from PIL import Image, PngImagePlugin
 from concurrent.futures import ThreadPoolExecutor
-import discord, os, openai, tiktoken, re, requests, json, base64, io, runpod, time, asyncio
+import discord, os, openai, tiktoken, re, requests, base64, io, runpod, time, asyncio
 
 # set up environment variables
 load_dotenv()
