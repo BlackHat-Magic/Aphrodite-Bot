@@ -1,10 +1,11 @@
 # from discord.ext import commands, ipc
 # from discord import app_commands
+from datetime import datetime
+from discord.ui import Button
 from dotenv import load_dotenv
 from discord.ext import commands
-from discord import app_commands, ButtonStyle
-from discord.ui import Button
 from PIL import Image, PngImagePlugin
+from discord import app_commands, ButtonStyle
 from concurrent.futures import ThreadPoolExecutor
 import discord, os, openai, tiktoken, re, requests, base64, io, runpod, time, asyncio
 
@@ -21,6 +22,7 @@ upscale = runpod.Endpoint(os.getenv("RUNPOD_UPSCALE_ENDPOINT"))
 system_prompt = ""
 with open("system_prompt_main.txt", "r") as file:
     system_prompt += file.read()
+    system_prompt = system_prompt.replace("{{DATE}}", datetime.now().strftime("%Y-%m-%d"))
 
 # set up thread namer
 thread_namer = ""
