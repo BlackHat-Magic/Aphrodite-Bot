@@ -16,6 +16,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 runpod.api_key = os.getenv("RUNPOD_API_KEY")
 generic = runpod.Endpoint(os.getenv("RUNPOD_GENERIC_ENDPOINT"))
 upscale = runpod.Endpoint(os.getenv("RUNPOD_UPSCALE_ENDPOINT"))
+controlnet = runpod.Endpoint(os.getenv("RUNPOD_CONTROLNET_ENDPOINT"))
 
 # set up system prompt
 system_prompt = ""
@@ -28,10 +29,6 @@ thread_namer = ""
 with open("system_prompt_name_thread.txt", "r") as file:
     thread_namer += file.read()
 
-googler = ""
-with open("system_prompt_google.txt", "r") as file:
-    googler += file.read()
-
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -43,76 +40,31 @@ openpose = OpenposeDetector.from_pretrained("lllyasviel/Annotators")
 # zoe = ZoeDetector.from_pretrained("lllyasviel/Annotators")
 
 class PreprocessorDropdown(discord.ui.View):
-    # https://huggingface.co/kohya-ss/controlnet-lllite
-    # blur          controllllite_v01032064e_sdxl_blur-500-1000.safetensors
-    # canny         controllllite_v01032064e_sdxl_canny.safetensors
-    # depth         controllllite_v01032064e_sdxl_depth_500-1000.safetensors
-    # scribble      controllllite_v01032064e_sdxl_fake_scribble_anime.safetensors
-    # openpose      controllllite_v01032064e_sdxl_pose_anime.safetensors
-    # replicate     controllllite_v01032064e_sdxl_replicate_anime_v2.safetensors
-    def __init__(self, image_url):
-        super().__init__(timeout=None)
-        self.image_url = image_url
+    def __init__(self):
+        super().__init__(timeout=60 )
+        self.chosen_controlnet = None
     @select(placeholder="Select a preprocessor; Image will be cropped to a square and resized to 512x512 before preprocessing...", options=[
-            SelectOption(label="Blur", value="Blur"),
+            # SelectOption(label="Blur", value="Blur"),
             SelectOption(label="Canny Edge", value="Canny Edge"),
             # SelectOption(label="Depth", value="Depth"),
             SelectOption(label="Openpose", value="Openpose")
     ])
     async def callback(self, interaction: discord.Interaction, select: Select):
-        preprocessor = select.values[0]
-        try:
-            response = requests.get(self.image_url)
-            image = Image.open(io.BytesIO(response.content)).convert("RGB")
-        except Exception as e:
-            await interaction.response.send_message(f"Image failed to load. ({e})", ephemeral=True)
-            return
-        
-        if(response.status_code != 200):
-            await interaction.response.send_message("Invalid URL.", ephemeral=True)
-            return
+        self.chosen_controlnet = select.values[0]
+        self.stop()
 
-        await interaction.response.defer()
-
-        # calculate crop
-        width, height = image.size
-        crop_size = min(width, height)
-        left = int((height - crop_size) / 2)
-        top = int((height - crop_size) / 2)
-        right = int((width + crop_size) / 2)
-        bottom = int((height + crop_size) / 2)
-
-        # crop
-        image = image.crop((left, top, right, bottom))
-
-        # resize image and convert to numpy
-        image = image.resize((512,512))
-        image = numpy.array(image)
-
-        is_PIL = False
-        match preprocessor:
-            case "Blur":
-                preprocessed = cv2.GaussianBlur(image, (51, 51), 0)
-            case "Canny Edge":
-                preprocessed = cv2.Canny(image, 100, 200)
-            # case "Depth":
-            #     preprocessed = zoe(image)
-            case "Openpose":
-                preprocessed = openpose(image)
-                is_PIL = True
-        
-        with io.BytesIO() as image_binary:
-            if(not bool(is_PIL)):
-                preprocessed = Image.fromarray(preprocessed)
-            preprocessed.save(image_binary, "PNG")
-            image_binary.seek(0)
-            sent_file = discord.File(fp=image_binary, filename="preprocessed.png")
-        
-        await interaction.followup.send("Image processed.")
-        initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
-        await initial_message.add_files(sent_file)
-        self.clear_items()
-        await interaction.message.edit("Preprocessor model selected.", view=self)
+class ControlNetDropdown(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=60)
+        self.chosen_controlnet = None
+    @select(placeholder="Select a controlnet model...", options = [
+        SelectOption(label="Canny Edge", value="Canny Edge"),
+        SelectOption(label="Depth Map", value="Depth Map"),
+        SelectOption(label="Openpose", value="Openpose")
+    ])
+    async def callback(self, interaction: discord.Interaction, select: Select):
+        self.chosen_controlnet = select.values[0]
+        self.stop()
 
 @client.event
 async def on_ready():
@@ -347,7 +299,7 @@ async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt
                 embed=embed
             )
         else:
-            await repetitions[-1]["message"].reply(
+            await interaction.followup.send(
                 f"<@{userid}> Request processing...",
                 embed=embed
             )
@@ -469,20 +421,279 @@ async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt
     await asyncio.gather(*(awaitResponse(repetition) for repetition in repetitions))
 
 @client.tree.command(name="controlnet")
-async def controlnet(interaction: discord.Interaction, prompt: str, image_url_1: str, image_url_2: str = None, image_url_3: str = None, image_url_4: str = None, image_url_5: str = None, image_url_6: str = None, negative_prompt: str = None, aspect_ratio: str = None, repeat: int=1):
+async def retrieve_controlnet(interaction: discord.Interaction, prompt: str, image_url: str, negative_prompt: str = None, aspect_ratio: str = None, repeat: int=1):
+    if(repeat > 8):
+        await interaction.response.send_message(
+            "Too many repeats requested; aborting...",
+            ephemeral=True
+        )
+        return
+    if(repeat < 1):
+        await interaction.response.send_message(
+            "Invalid repeat number specified; aborting...",
+            ephemeral=True
+        )
+        return
+    userid = interaction.user.id
+    repetitions = []
+
+    
+    view = ControlNetDropdown()
+    await interaction.response.send_message("Select ControlNet model:", view=view)
+    initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
+
+    try:
+        response = requests.get(image_url)
+        if(response.status_code != 200):
+            view.clear_items()
+            await initial_message.edit(content=f"Invalid image url. Returned code {response.status_code}", view=view, delete_after=30)
+            return
+        image = Image.open(io.BytesIO(response.content)).convert("RGB")
+    except Exception as e:
+        view.clear_items()
+        await initial_message.edit(content=f"Image failed to load. ({e})", view=view, delete_after=30)
+        return
+
+    await view.wait()
+    view.clear_items()
+
+    if(view.is_finished):
+        if(view.chosen_controlnet == None):
+            view.clear_items()
+            await initial_message.edit(content="Interaction expired.", view=view, delete_after=30)
+            return
+
+    await initial_message.edit(content="Preprocessor model selected.", view=view)
+
+    for i in range(repeat):
+        # deal with message
+        embed = discord.Embed(
+            title="Image Job",
+            color=discord.Color.from_rgb(0, 255, 255)
+        )
+        embed.add_field(
+            name="Status",
+            value="In queue...",
+            inline=True
+        )
+        embed.add_field(
+            name="Prompt",
+            value=prompt,
+            inline=False
+        )
+        if(negative_prompt == None):
+            displayed_negative_prompt = "Default (\"bad quality, worst quality, blurry, out of focus, cropped, out of frame, deformed, bad hands, bad anatomy\")"
+        else:
+            displayed_negative_prompt = negative_prompt
+        embed.add_field(
+            name="Negative Prompt",
+            value=displayed_negative_prompt,
+            inline=False
+        )
+        embed.add_field(
+            name="Desired Aspect Ratio",
+            value=aspect_ratio,
+            inline=True
+        )
+        await interaction.followup.send(
+            f"<@{userid}> Request processing...",
+            embed=embed
+        )
+        initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
+
+        # get aspect ratio
+        desired_ratio = 1.0
+        if(aspect_ratio and not re.match(r"^\d+:\d+$", aspect_ratio)):
+            await initial_message.edit(
+                contents="Invalid aspect ratio. Format as `width:height` (e.g. 16:9, 1:1). Numbers must be integers.",
+                embeds=None
+            )
+            return
+        if(aspect_ratio != None):
+            desired_ratio = int(aspect_ratio.split(":")[0]) / int(aspect_ratio.split(":")[1])
+        supported_ratios = [
+            [0.42857, "9:21",  (640, 1536)], 
+            [0.50000, "1:2",   (704, 1472)], 
+            [0.56250, "9:16",  (768, 1344)], 
+            [0.66667, "2:3",   (832, 1280)], 
+            [0.68421, "13:19", (832, 1216)], 
+            [0.72727, "8:11",  (896, 1216)], 
+            [0.75000, "3:4",   (896, 1152)],
+            [0.77778, "7:9",   (896, 1152)], 
+            [1.00000, "1:1",   (1024, 1024)], 
+            [1.28571, "9:7",   (1152, 896)], 
+            [1.33333, "4:3",   (1152, 896)],
+            [1.37500, "11:8",  (1216, 896)],
+            [1.46154, "19:13", (1216, 832)],
+            [1.50000, "3:2",   (1280, 832)],
+            [1.77778, "16:9",  (1344, 768)],
+            [2.00000, "2:1",   (1472, 704)],
+            [2.33333, "21:9",  (1536, 640)]
+        ]
+        res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))
+        width, height = res_info[2]
+        embed.add_field(
+            name="Quantized Aspect Ratio",
+            value=res_info[1],
+            inline=True
+        )
+        embed.add_field(
+            name="Resolution",
+            value=f"{width}x{height}",
+            inline=True
+        )
+        await initial_message.edit(embed=embed)
+
+        with io.BytesIO() as image_binary:
+            image.save(image_binary, "PNG")
+            sent_file = base64.b64encode(image_binary.getvalue()).decode("utf-8")
+        
+        if(view.chosen_controlnet == "Canny Edge"):
+            model = "canny"
+        elif(view.chosen_controlnet == "Depth Map"):
+            model = "depth"
+        else:
+            model = "openpose"
+
+        # set up post request
+        if(negative_prompt == None):
+            payload = {
+                "prompt": prompt,
+                "batch_size": 4,
+                "width": width,
+                "height": height,
+                "images": [sent_file],
+                "model": model
+            }
+        else:
+            payload = {
+                "prompt": prompt,
+                "batch_size": 4,
+                "width": width,
+                "height": height,
+                "negative_prompt": negative_prompt,
+                "images": [sent_file],
+                "model": model
+            }
+        
+        # initialize serverless request
+        run_request = controlnet.run(payload)
+
+        repetitions.append({
+            "message": initial_message,
+            "runpod_request": run_request,
+            "progress_started": False,
+            "embed": embed,
+            "uploaded": False
+        })
+
+    async def awaitResponse(repetition):
+        while(True):
+            initial_message = repetition["message"]
+            status = repetition["runpod_request"].status()
+            embed = repetition["embed"]
+            if(status == "IN_PROGRESS" and not repetition["progress_started"]):
+                embed.set_field_at(0, name="Status", value="In progress...")
+                repetition["progress_started"] = True
+                await initial_message.edit(embed=embed)
+            if(status == "COMPLETED" and not repetition["uploaded"]):
+                embed.set_field_at(0, name="Status", value="Loading images...")
+                await initial_message.edit(embed=embed)
+
+                output = repetition["runpod_request"].output()
+                grid = Image.new("RGB", (width * 2, height * 2))
+                grid.paste(Image.open(io.BytesIO(base64.b64decode(output[0]))), (0, 0))
+                grid.paste(Image.open(io.BytesIO(base64.b64decode(output[1]))), (width, 0))
+                grid.paste(Image.open(io.BytesIO(base64.b64decode(output[2]))), (0, height))
+                grid.paste(Image.open(io.BytesIO(base64.b64decode(output[3]))), (width, height))
+
+                sent_file = None
+                with io.BytesIO() as image_binary:
+                    grid.save(image_binary, "PNG")
+                    image_binary.seek(0)
+                    sent_file = discord.File(fp=image_binary, filename="grid.png")
+
+                await initial_message.add_files(sent_file)
+                embed.set_field_at(0, name="Status", value="Completed")
+                view = discord.ui.View()
+                view.add_item(Button(style=ButtonStyle.primary, label="U1", custom_id="upscale_1"))
+                view.add_item(Button(style=ButtonStyle.primary, label="U2", custom_id="upscale_2"))
+                view.add_item(Button(style=ButtonStyle.primary, label="U3", custom_id="upscale_3"))
+                view.add_item(Button(style=ButtonStyle.primary, label="U4", custom_id="upscale_4"))
+                await initial_message.edit(
+                    content=f"<@{userid}> Request completed.",
+                    embed=embed,
+                    view=view
+                )
+                repetition["uploaded"] = True
+                break
+            await asyncio.sleep(1)
+    
+    await asyncio.gather(*(awaitResponse(repetition) for repetition in repetitions))
     await interaction.response.send_message("Command not implemented yet.")
 
 @client.tree.command(name="preprocess")
 async def preprocessCommand(interaction: discord.Interaction, image_url: str):
-    # https://huggingface.co/kohya-ss/controlnet-lllite
-    # blur          controllllite_v01032064e_sdxl_blur-500-1000.safetensors
-    # canny         controllllite_v01032064e_sdxl_canny.safetensors
-    # depth         controllllite_v01032064e_sdxl_depth_500-1000.safetensors
-    # scribble      controllllite_v01032064e_sdxl_fake_scribble_anime.safetensors
-    # openpose      controllllite_v01032064e_sdxl_pose_anime.safetensors
-    # replicate     controllllite_v01032064e_sdxl_replicate_anime_v2.safetensors
-    view = PreprocessorDropdown(image_url)
+    view = PreprocessorDropdown()
     await interaction.response.send_message("Select preprocessor model:", view=view)
+    initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
+
+    try:
+        response = requests.get(image_url)
+        if(response.status_code != 200):
+            view.clear_items()
+            await initial_message.edit(content=f"Invalid URL. Returned code {response.status_code}.", delete_after=30, view=view)
+            return
+        image = Image.open(io.BytesIO(response.content)).convert("RGB")
+    except Exception as e:
+        view.clear_items()
+        await initial_message.edit(f"Image failed to load ({e}).", view=view, delete_after=30)
+        return
+
+    await view.wait()
+    view.clear_items()
+
+    if(view.is_finished):
+        if(view.chosen_controlnet == None):
+            view.clear_items()
+            await initial_message.edit("Interaction expired.", view=view, delete_after=30)
+            return
+
+    await initial_message.edit(content="Preprocessor model selected.", view=view)
+
+    # calculate crop
+    width, height = image.size
+    crop_size = min(width, height)
+    left = int((height - crop_size) / 2)
+    top = int((height - crop_size) / 2)
+    right = int((width + crop_size) / 2)
+    bottom = int((height + crop_size) / 2)
+
+    # crop
+    image = image.crop((left, top, right, bottom))
+
+    # resize image and convert to numpy
+    image = image.resize((512,512))
+    image = numpy.array(image)
+
+    is_PIL = False
+    match view.chosen_controlnet:
+        case "Canny Edge":
+            preprocessed = cv2.Canny(image, 100, 200)
+        case "Openpose":
+            preprocessed = openpose(image)
+            is_PIL = True
+    
+    with io.BytesIO() as image_binary:
+        if(not bool(is_PIL)):
+            preprocessed = Image.fromarray(preprocessed)
+        preprocessed.save(image_binary, "PNG")
+        image_binary.seek(0)
+        sent_file = discord.File(fp=image_binary, filename="preprocessed.png")
+    
+    await interaction.followup.send("Image processed.")
+    initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
+    await initial_message.add_files(sent_file)
 
 @client.event
 async def on_interaction(interaction):
@@ -548,7 +759,6 @@ async def on_interaction(interaction):
             cropped_image = image.crop((left, top, right, bottom))
 
             # encode b64
-            sent_file = None
             with io.BytesIO() as image_binary:
                 cropped_image.save(image_binary, "PNG")
                 sent_file = base64.b64encode(image_binary.getvalue()).decode("utf-8")
