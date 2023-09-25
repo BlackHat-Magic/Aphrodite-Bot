@@ -663,8 +663,7 @@ async def preprocessCommand(interaction: discord.Interaction, image_url: str):
             await initial_message.edit(content="Interaction expired.", view=view, delete_after=30)
             return
 
-    await initial_message.edit(content="Preprocessor model selected.", view=view)
-    await interaction.response.defer()
+    await initial_message.edit(content="Preprocessor model selected. (loading...)", view=view)
 
     # calculate crop
     width, height = image.size
@@ -699,6 +698,8 @@ async def preprocessCommand(interaction: discord.Interaction, image_url: str):
             is_PIL = True
         case "Depth":
             preprocessed = depthPreprocessor(image, to_pil=True)
+    
+    await initial_message.edit(content="Preprocessor model selected.")
     
     with io.BytesIO() as image_binary:
         if(not bool(is_PIL)):
