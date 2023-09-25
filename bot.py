@@ -670,34 +670,34 @@ async def preprocessCommand(interaction: discord.Interaction, image_url: str):
     crop_size = min(width, height)
     left = (width - crop_size) // 2
     top = (height - crop_size) // 2
-    right = (width - crop_size) // 2 + width
-    bottom = (height - crop_size) // 2 + height
+    right = left + crop_size
+    bottom = top + crop_size
 
     # crop
-    image = image.crop((left, top, right, bottom))
+    cropped_image = image.crop((left, top, right, bottom))
 
     # resize image and convert to numpy
-    image = image.resize((512,512))
-    image = numpy.array(image)
+    resized_image = cropped_image.resize((512,512))
+    arr_image = numpy.array(resized_image)
 
     is_PIL = False
     match view.chosen_controlnet:
         case "Canny Edge":
-            preprocessed = cv2.Canny(image, 100, 200)
+            preprocessed = cv2.Canny(arr_image, 100, 200)
         case "Openpose":
-            preprocessed = openposePreprocessor(image, to_pil=True)
+            preprocessed = openposePreprocessor(arr_image, to_pil=True)
             is_PIL = True
         case "Openpose Hand":
-            preprocessed = openposeHandPreprocessor(image, to_pil=True)
+            preprocessed = openposeHandPreprocessor(arr_image, to_pil=True)
             is_PIL = True
         case "Openpose Face":
-            preprocessed = openposeFacePreprocessor(image, to_pil=True)
+            preprocessed = openposeFacePreprocessor(arr_image, to_pil=True)
             is_PIL = True
         case "Openpose Full":
-            preprocessed = openposeFullPreprocessor(image, to_pil=True)
+            preprocessed = openposeFullPreprocessor(arr_image, to_pil=True)
             is_PIL = True
         case "Depth":
-            preprocessed = depthPreprocessor(image, to_pil=True)
+            preprocessed = depthPreprocessor(arr_image, to_pil=True)
     
     await initial_message.edit(content="Preprocessor model selected.")
     
