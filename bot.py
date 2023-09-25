@@ -52,7 +52,7 @@ class PreprocessorDropdown(discord.ui.View):
             SelectOption(label="Depth Map", value="Depth"),
             SelectOption(label="Openpose", value="Openpose"),
             SelectOption(label="Openpose (with Face)", value="Openpose Face"),
-            SelectOption(label="Openpose (with Hands)", value="Openpose Hand"),
+            SelectOption(label="Openpose (Hands Only)", value="Openpose Hand"),
             SelectOption(label="Openpose (Full)", value="Openpose Full")
     ])
     async def callback(self, interaction: discord.Interaction, select: Select):
