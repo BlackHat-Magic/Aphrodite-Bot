@@ -7,7 +7,7 @@ from PIL import Image, PngImagePlugin
 from discord.ui import Button, Select, select
 from concurrent.futures import ThreadPoolExecutor
 from discord import app_commands, ButtonStyle, SelectOption
-from controlnet_aux_voltaml import OpenposeDetector
+from controlnet_aux.processor import Processor
 import discord, os, openai, tiktoken, re, requests, base64, io, runpod, time, asyncio, cv2, numpy
 
 # set up environment variables
@@ -36,8 +36,11 @@ intents.message_content = True
 client = commands.Bot(command_prefix="h!", intents=intents)
 
 # instantiate the controlnet preprocessors
-openpose = OpenposeDetector.from_pretrained("lllyasviel/Annotators")
-# zoe = ZoeDetector.from_pretrained("lllyasviel/Annotators")
+depthPreprocessor = Processor("depth_midas")
+openposePreprocessor = Processor("openpose")
+openposeFacePreprocessor = Processor("openpose_face")
+openposeHandPreprocessor = Processor("openpose_hand")
+openposeFullPreprocessor = Processor("openpose_full")
 
 class PreprocessorDropdown(discord.ui.View):
     def __init__(self):
@@ -46,8 +49,11 @@ class PreprocessorDropdown(discord.ui.View):
     @select(placeholder="Select a preprocessor; Image will be cropped to a square and resized to 512x512 before preprocessing...", options=[
             # SelectOption(label="Blur", value="Blur"),
             SelectOption(label="Canny Edge", value="Canny Edge"),
-            # SelectOption(label="Depth", value="Depth"),
-            SelectOption(label="Openpose", value="Openpose")
+            SelectOption(label="Depth Map", value="Depth"),
+            SelectOption(label="Openpose", value="Openpose"),
+            SelectOption(label="Openpose (with Face)", value="Openpose Face"),
+            SelectOption(label="Openpose (with Hands)", value="Openpose Hand"),
+            SelectOption(label="Openpose (Full)", value="Openpose Full")
     ])
     async def callback(self, interaction: discord.Interaction, select: Select):
         self.chosen_controlnet = select.values[0]
@@ -60,7 +66,7 @@ class ControlNetDropdown(discord.ui.View):
     @select(placeholder="Select a controlnet model...", options = [
         SelectOption(label="Canny Edge", value="Canny Edge"),
         SelectOption(label="Depth Map", value="Depth Map"),
-        SelectOption(label="Openpose", value="Openpose")
+        SelectOption(label="Openpose (Any)", value="Openpose")
     ])
     async def callback(self, interaction: discord.Interaction, select: Select):
         self.chosen_controlnet = select.values[0]
@@ -436,7 +442,6 @@ async def retrieve_controlnet(interaction: discord.Interaction, prompt: str, ima
         return
     userid = interaction.user.id
     repetitions = []
-
     
     view = ControlNetDropdown()
     await interaction.response.send_message("Select ControlNet model:", view=view)
@@ -630,7 +635,6 @@ async def retrieve_controlnet(interaction: discord.Interaction, prompt: str, ima
             await asyncio.sleep(1)
     
     await asyncio.gather(*(awaitResponse(repetition) for repetition in repetitions))
-    await interaction.response.send_message("Command not implemented yet.")
 
 @client.tree.command(name="preprocess")
 async def preprocessCommand(interaction: discord.Interaction, image_url: str):
@@ -681,8 +685,19 @@ async def preprocessCommand(interaction: discord.Interaction, image_url: str):
         case "Canny Edge":
             preprocessed = cv2.Canny(image, 100, 200)
         case "Openpose":
-            preprocessed = openpose(image)
+            preprocessed = openposePreprocessor(image, to_pil=True)
             is_PIL = True
+        case "Openpose Hand":
+            preprocessed = openposeHandPreprocessor(image, to_pil=True)
+            is_PIL = True
+        case "Openpose Face":
+            preprocessed = openposeFacePreprocessor(image, to_pil=True)
+            is_PIL = True
+        case "Openpose Full":
+            preprocessed = openposeFullPreprocessor(image, to_pil=True)
+            is_PIL = True
+        case "Depth":
+            preprocessed = depthPreprocessor(image, to_pil=True)
     
     with io.BytesIO() as image_binary:
         if(not bool(is_PIL)):
