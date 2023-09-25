@@ -660,10 +660,11 @@ async def preprocessCommand(interaction: discord.Interaction, image_url: str):
     if(view.is_finished):
         if(view.chosen_controlnet == None):
             view.clear_items()
-            await initial_message.edit("Interaction expired.", view=view, delete_after=30)
+            await initial_message.edit(content="Interaction expired.", view=view, delete_after=30)
             return
 
     await initial_message.edit(content="Preprocessor model selected.", view=view)
+    await interaction.response.defer()
 
     # calculate crop
     width, height = image.size
