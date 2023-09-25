@@ -668,10 +668,10 @@ async def preprocessCommand(interaction: discord.Interaction, image_url: str):
     # calculate crop
     width, height = image.size
     crop_size = min(width, height)
-    left = (height - crop_size) // 2
+    left = (width - crop_size) // 2
     top = (height - crop_size) // 2
-    right = crop_size // 2 + width
-    bottom = crop_size // 2 + height
+    right = (width - crop_size) // 2 + width
+    bottom = (height - crop_size) // 2 + height
 
     # crop
     image = image.crop((left, top, right, bottom))
