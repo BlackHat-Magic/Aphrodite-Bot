@@ -665,16 +665,14 @@ async def preprocessCommand(interaction: discord.Interaction, image_url: str):
 
     await initial_message.edit(content="Preprocessor model selected. (loading...)", view=view)
 
-    # calculate crop
+    # paste
     width, height = image.size
-    crop_size = min(width, height)
-    left = (width - crop_size) // 2
-    top = (height - crop_size) // 2
-    right = left + crop_size
-    bottom = top + crop_size
-
-    # crop
-    cropped_image = image.crop((left, top, right, bottom))
+    canvas_size = max(width, height)
+    cropped_image = Image.new("RGBA", (canvas_size, canvas_size), "white")
+    cropped_image.paste(
+        image, 
+        ((canvas_size - width) // 2, (canvas_size - height) // 2)
+    )
 
     # resize image and convert to numpy
     resized_image = cropped_image.resize((512,512))
