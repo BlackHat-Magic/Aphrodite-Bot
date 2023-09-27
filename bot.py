@@ -4,7 +4,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from discord.ext import commands
 from PIL import Image, PngImagePlugin
-from discord.ui import Button, Select, select
+from discord.ui import Button, Select, select, button
 from concurrent.futures import ThreadPoolExecutor
 from discord import app_commands, ButtonStyle, SelectOption
 from controlnet_aux.processor import Processor
@@ -45,7 +45,7 @@ openposeFullPreprocessor = Processor("openpose_full")
 class ImageEmbed(discord.Embed):
     def __init__(self, title, rgb, prompt, negative_prompt, aspect_ratio, quantized_aspect_ratio, resolution):
         super().__init__(title=title, color=discord.Color.from_rgb(*(rgb)))
-        self.add_field(name="Status" value="In queue...", inline=True)
+        self.add_field(name="Status", value="In queue...", inline=True)
         self.add_field(name="Prompt", value=prompt, inline=False)
         self.add_field(name="Negative Prompt", value=negative_prompt, inline=False)
         self.add_field(name="Desired Aspect Ratio", value=aspect_ratio, inline=True)
@@ -91,8 +91,11 @@ class ImageButtons(discord.ui.View):
         self.add_item(Button(style=ButtonStyle.primary, label="U2", custom_id="1"))
         self.add_item(Button(style=ButtonStyle.primary, label="U3", custom_id="2"))
         self.add_item(Button(style=ButtonStyle.primary, label="U4", custom_id="3"))
+        for item in self.children:
+            item.callback = self.dispatch
     
-    async def on_interaction(self, interaction: discord.Interaction):
+    async def dispatch(self, interaction: discord.Interaction):
+        print("interacted")
         custom_id = int(interaction.data["custom_id"])
         if(self.upscaled[custom_id]):
             await interaction.followup.send(f"Image already upscaled. It can be seen [here]({upscaled_urls[custom_id]}).", ephemeral=True)
@@ -100,26 +103,36 @@ class ImageButtons(discord.ui.View):
         message = interaction.message
         userid = interaction.user.id
 
+        # grab image
+        try:
+            image = Image.open(io.BytesIO(requests.get(message.attachments[0].url).content))
+        except:
+            await initial_message.edit("Image failed to load.", embeds=None, ephemeral=True)
+            return
+
         fields = message.embeds[0].fields
-        prompt = fields[1]
-        negative_prompt = fields[2]
-        aspect_ratio = fields[3]
-        quantized_aspect_ratio = fields[4]
-        resolution = (int(number) for number in fields[5].split("x"))
+        prompt = fields[1].value
+        negative_prompt = fields[2].value
+        aspect_ratio = fields[3].value
+        quantized_aspect_ratio = fields[4].value
+        resolution = image.size
+
+        if(negative_prompt == 'Default ("bad quality, worst quality, blurry, out of focus, cropped, out of frame, deformed, bad hands, bad anatomy")'):
+            negative_prompt = "bad quality, worst quality, blurry, out of focus, cropped, out of frame, deformed, bad hands, bad anatomy"
 
         embed = ImageEmbed("Upscale Job", (128, 0, 255), prompt, negative_prompt, aspect_ratio, quantized_aspect_ratio, resolution)
 
         # update embed
         embed.set_field_at(
             3,
-            "Original Resolution",
-            f"{int(image.width / 2)}x{int(image.height / 2)}",
+            name="Original Resolution",
+            value=f"{int(image.width / 2)}x{int(image.height / 2)}",
             inline=True
         )
         embed.set_field_at(
             4,
-            "New Resolution",
-            f"{image.width}x{image.height}",
+            name="New Resolution",
+            value=f"{image.width}x{image.height}",
             inline=True
         )
         embed.remove_field(5)
@@ -185,7 +198,7 @@ class ImageButtons(discord.ui.View):
             embed=embed
         )
 
-async def awaitResponse(repetition):
+async def awaitResponse(repetition, userid):
     while(True):
         initial_message = repetition["message"]
         status = repetition["runpod_request"].status()
@@ -199,13 +212,17 @@ async def awaitResponse(repetition):
             await initial_message.edit(embed=embed)
 
             output = repetition["runpod_request"].output()
+            image1 = Image.open(io.BytesIO(base64.b64decode(output[0])))
+            image2 = Image.open(io.BytesIO(base64.b64decode(output[1])))
+            image3 = Image.open(io.BytesIO(base64.b64decode(output[2])))
+            image4 = Image.open(io.BytesIO(base64.b64decode(output[3])))
+            width, height = image1.size
             grid = Image.new("RGB", (width * 2, height * 2))
-            grid.paste(Image.open(io.BytesIO(base64.b64decode(output[0]))), (0, 0))
-            grid.paste(Image.open(io.BytesIO(base64.b64decode(output[1]))), (width, 0))
-            grid.paste(Image.open(io.BytesIO(base64.b64decode(output[2]))), (0, height))
-            grid.paste(Image.open(io.BytesIO(base64.b64decode(output[3]))), (width, height))
+            grid.paste(image1, (0, 0))
+            grid.paste(image2, (width, 0))
+            grid.paste(image3, (0, height))
+            grid.paste(image4, (width, height))
 
-            sent_file = None
             with io.BytesIO() as image_binary:
                 grid.save(image_binary, "PNG")
                 image_binary.seek(0)
@@ -458,7 +475,8 @@ async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt
             return
         if(aspect_ratio != None):
             desired_ratio = int(aspect_ratio.split(":")[0]) / int(aspect_ratio.split(":")[1])
-        res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))\
+        res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))
+        width, height = res_info[2]
 
         # setup embed
         embed = ImageEmbed("Image Job", (0, 255, 255), prompt, displayed_negative_prompt, aspect_ratio, res_info[1], res_info[2])
@@ -502,7 +520,7 @@ async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt
             "uploaded": False
         })
     
-    await asyncio.gather(*(awaitResponse(repetition) for repetition in repetitions))
+    await asyncio.gather(*(awaitResponse(repetition, userid) for repetition in repetitions))
 
 @client.tree.command(name="controlnet")
 async def retrieve_controlnet(interaction: discord.Interaction, prompt: str, image_url: str, negative_prompt: str = None, aspect_ratio: str = None, repeat: int=1):
@@ -566,21 +584,27 @@ async def retrieve_controlnet(interaction: discord.Interaction, prompt: str, ima
             return
         if(aspect_ratio != None):
             desired_ratio = int(aspect_ratio.split(":")[0]) / int(aspect_ratio.split(":")[1])
-        res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))\
+        res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))
+        width, height = res_info[2]
 
         # setup embed
         embed = ImageEmbed("Controlnet Job", (255, 128, 0), prompt, displayed_negative_prompt, aspect_ratio, res_info[1], res_info[2])
-        if(i == 0):
-            await interaction.response.send_message(
-                f"<@{userid}> Request processing...",
-                embed=embed
-            )
-        else:
-            await interaction.followup.send(
-                f"<@{userid}> Request processing...",
-                embed=embed
-            )
+        await interaction.followup.send(
+            f"<@{userid}> Request processing...",
+            embed=embed
+        )
         initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
+
+        with io.BytesIO() as image_binary:
+            image.save(image_binary, "PNG")
+            sent_file = base64.b64encode(image_binary.getvalue()).decode("utf-8")
+        
+        if(view.chosen_controlnet == "Canny Edge"):
+            model = "canny"
+        elif(view.chosen_controlnet == "Depth Map"):
+            model = "depth"
+        else:
+            model = "openpose"
 
         # set up post request
         if(negative_prompt == None):
@@ -614,7 +638,7 @@ async def retrieve_controlnet(interaction: discord.Interaction, prompt: str, ima
             "uploaded": False
         })
     
-    await asyncio.gather(*(awaitResponse(repetition) for repetition in repetitions))
+    await asyncio.gather(*(awaitResponse(repetition, userid) for repetition in repetitions))
 
 @client.tree.command(name="preprocess")
 async def preprocessCommand(interaction: discord.Interaction, image_url: str):
