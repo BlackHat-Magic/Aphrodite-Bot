@@ -575,7 +575,9 @@ async def retrieve_controlnet(interaction: discord.Interaction, prompt: str, ima
                 ephemeral=True
             )
             return
-        if(aspect_ratio != None):
+        if(aspect_ratio == None):
+            desired_ratio = image.width / image.height
+        else:
             desired_ratio = int(aspect_ratio.split(":")[0]) / int(aspect_ratio.split(":")[1])
         res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))
         width, height = res_info[2]
