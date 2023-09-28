@@ -85,32 +85,29 @@ class ControlNetDropdown(discord.ui.View):
 class ImageButtons(discord.ui.View):
     def __init__(self):
         super().__init__()
-        self.upscaled = [False, False, False, False]
         self.upscaled_urls = [None, None, None, None]
-        self.add_item(Button(style=ButtonStyle.primary, label="U1", custom_id="0"))
-        self.add_item(Button(style=ButtonStyle.primary, label="U2", custom_id="1"))
-        self.add_item(Button(style=ButtonStyle.primary, label="U3", custom_id="2"))
-        self.add_item(Button(style=ButtonStyle.primary, label="U4", custom_id="3"))
+        self.add_item(Button(style=ButtonStyle.primary, label="U1", custom_id="0", row=0, emoji="↕"))
+        self.add_item(Button(style=ButtonStyle.primary, label="U2", custom_id="1", row=0, emoji="↕"))
+        self.add_item(Button(style=ButtonStyle.primary, label="U3", custom_id="2", row=1, emoji="↕"))
+        self.add_item(Button(style=ButtonStyle.primary, label="U4", custom_id="3", row=1, emoji="↕"))
         for item in self.children:
             item.callback = self.dispatch
-    
+
     async def dispatch(self, interaction: discord.Interaction):
-        print("interacted")
         custom_id = int(interaction.data["custom_id"])
-        if(self.upscaled[custom_id]):
-            await interaction.followup.send(f"Image already upscaled. It can be seen [here]({upscaled_urls[custom_id]}).", ephemeral=True)
+        if(self.upscaled_urls[custom_id] != None):
+            await interaction.response.send_message(f"Image already upscaled. It can be seen [here]({self.upscaled_urls[custom_id]}).", ephemeral=True)
             return
-        message = interaction.message
         userid = interaction.user.id
 
         # grab image
         try:
-            image = Image.open(io.BytesIO(requests.get(message.attachments[0].url).content))
+            image = Image.open(io.BytesIO(requests.get(interaction.message.attachments[0].url).content))
         except:
-            await initial_message.edit("Image failed to load.", embeds=None, ephemeral=True)
+            await interaction.response.send_message("Image failed to load.", embeds=None, ephemeral=True)
             return
 
-        fields = message.embeds[0].fields
+        fields = interaction.message.embeds[0].fields
         prompt = fields[1].value
         negative_prompt = fields[2].value
         aspect_ratio = fields[3].value
@@ -142,13 +139,9 @@ class ImageButtons(discord.ui.View):
             embed=embed
         )
         initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
+        self.upscaled_urls[custom_id] = initial_message.jump_url
+        self.children[custom_id].url = initial_message.jump_url
 
-        # grab image
-        try:
-            image = Image.open(io.BytesIO(requests.get(message.attachments[0].url).content))
-        except:
-            await initial_message.edit("Image failed to load.", embeds=None, ephemeral=True)
-            return
         # crop image
         top, left, right, bottom = 0, 0, int(image.width / 2), int(image.height / 2)
         if(custom_id == 1):
@@ -194,7 +187,7 @@ class ImageButtons(discord.ui.View):
         await initial_message.add_files(sent_file)
         embed.set_field_at(0, name="Status", value="Completed")
         await initial_message.edit(
-            content="Request completed.",
+            content=f"<@{userid}> Request completed.",
             embed=embed
         )
 
@@ -671,16 +664,9 @@ async def preprocessCommand(interaction: discord.Interaction, image_url: str):
 
     # paste
     width, height = image.size
-    canvas_size = max(width, height)
-    cropped_image = Image.new("RGBA", (canvas_size, canvas_size), "white")
-    cropped_image.paste(
-        image, 
-        ((canvas_size - width) // 2, (canvas_size - height) // 2)
-    )
-
-    # resize image and convert to numpy
-    resized_image = cropped_image.resize((512,512))
-    arr_image = numpy.array(resized_image)
+    resize_ratio = 512 / min(width, height)
+    image = image.resize((int(resize_ratio * width), int(resize_ratio * height)))
+    arr_image = numpy.array(image)
 
     is_PIL = False
     match view.chosen_controlnet:
