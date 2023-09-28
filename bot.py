@@ -31,8 +31,6 @@ with open("system_prompt_name_thread.txt", "r") as file:
 
 intents = discord.Intents.default()
 intents.message_content = True
-
-# client = discord.Client(intents=intents)
 client = commands.Bot(command_prefix="h!", intents=intents)
 
 # instantiate the controlnet preprocessors
@@ -234,16 +232,16 @@ async def awaitResponse(repetition, userid):
         await asyncio.sleep(1)
 
 supported_ratios = [
-    [0.42857, "9:21",  (640, 1536)], 
-    [0.50000, "1:2",   (704, 1472)], 
-    [0.56250, "9:16",  (768, 1344)], 
-    [0.66667, "2:3",   (832, 1280)], 
-    [0.68421, "13:19", (832, 1216)], 
-    [0.72727, "8:11",  (896, 1216)], 
+    [0.42857, "9:21",  (640, 1536)],
+    [0.50000, "1:2",   (704, 1472)],
+    [0.56250, "9:16",  (768, 1344)],
+    [0.66667, "2:3",   (832, 1280)],
+    [0.68421, "13:19", (832, 1216)],
+    [0.72727, "8:11",  (896, 1216)],
     [0.75000, "3:4",   (896, 1152)],
-    [0.77778, "7:9",   (896, 1152)], 
-    [1.00000, "1:1",   (1024, 1024)], 
-    [1.28571, "9:7",   (1152, 896)], 
+    [0.77778, "7:9",   (896, 1152)],
+    [1.00000, "1:1",   (1024, 1024)],
+    [1.28571, "9:7",   (1152, 896)],
     [1.33333, "4:3",   (1152, 896)],
     [1.37500, "11:8",  (1216, 896)],
     [1.46154, "19:13", (1216, 832)],
@@ -671,23 +669,24 @@ async def preprocessCommand(interaction: discord.Interaction, image_url: str):
     arr_image = numpy.array(image)
 
     is_PIL = False
+    loop = asyncio.get_event_loop()
     match view.chosen_controlnet:
         case "Canny Edge":
-            preprocessed = cv2.Canny(arr_image, 100, 200)
+            preprocessed = await loop.run_in_executor(None, lambda: cv2.Canny(arr_image, 100, 200))
         case "Openpose":
-            preprocessed = openposePreprocessor(arr_image, to_pil=True)
+            preprocessed = await loop.run_in_executor(None, lambda: openposePreprocessor(arr_image, to_pil=True))
             is_PIL = True
         case "Openpose Hand":
-            preprocessed = openposeHandPreprocessor(arr_image, to_pil=True)
+            preprocessed = await loop.run_in_executor(None, lambda: openposeHandPreprocessor(arr_image, to_pil=True))
             is_PIL = True
         case "Openpose Face":
-            preprocessed = openposeFacePreprocessor(arr_image, to_pil=True)
+            preprocessed = await loop.run_in_executor(None, lambda: openposeFacePreprocessor(arr_image, to_pil=True))
             is_PIL = True
         case "Openpose Full":
-            preprocessed = openposeFullPreprocessor(arr_image, to_pil=True)
+            preprocessed = await loop.run_in_executor(None, lambda: openposeFullPreprocessor(arr_image, to_pil=True))
             is_PIL = True
         case "Depth":
-            preprocessed = depthPreprocessor(arr_image, to_pil=True)
+            preprocessed = await loop.run_in_executor(None, lambda: depthPreprocessor(arr_image, to_pil=True))
     
     await initial_message.edit(content="Preprocessor model selected.")
     
