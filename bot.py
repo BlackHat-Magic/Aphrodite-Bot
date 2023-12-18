@@ -309,7 +309,11 @@ async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt
                 f"<@{userid}> Request processing...",
                 embed=embed
             )
-        initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
+        if(type(interaction.channel) == discord.DMChannel):
+            async for message in interaction.channel.history(limit=1):
+                initial_message = message
+        else:
+            initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
 
         # set up post request
         if(negative_prompt == None):
