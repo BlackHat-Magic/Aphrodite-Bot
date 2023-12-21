@@ -321,7 +321,9 @@ async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt
                 "prompt": prompt,
                 "batch_size": 4,
                 "width": width,
-                "height": height
+                "height": height,
+                "steps": 4,
+                "guidance": 0.0
             }
         else:
             payload = {
@@ -329,7 +331,9 @@ async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt
                 "batch_size": 4,
                 "width": width,
                 "height": height,
-                "negative_prompt": negative_prompt
+                "negative_prompt": negative_prompt,
+                "steps": 6,
+                "guidance": 0.0
             }
         
         # initialize serverless request
