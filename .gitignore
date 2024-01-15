@@ -3,3 +3,4 @@ system_prompt_main.txt
 system_prompt_name_thread.txt
 system_prompt_google.txt
 *.png
+**/__pycache__/

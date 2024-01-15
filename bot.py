@@ -7,26 +7,14 @@ from PIL import Image, PngImagePlugin
 from discord.ui import Button, Select, select, button
 from discord import ButtonStyle, SelectOption
 from controlnet_aux.processor import Processor
-import discord, os, openai, tiktoken, re, requests, base64, io, runpod, time, asyncio, cv2, numpy
+import discord, os, re, requests, base64, io, runpod, time, asyncio, cv2, numpy
 
 # set up environment variables
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
 runpod.api_key = os.getenv("RUNPOD_API_KEY")
 generic = runpod.Endpoint(os.getenv("RUNPOD_GENERIC_ENDPOINT"))
 upscale = runpod.Endpoint(os.getenv("RUNPOD_UPSCALE_ENDPOINT"))
 controlnet = runpod.Endpoint(os.getenv("RUNPOD_CONTROLNET_ENDPOINT"))
-
-# set up system prompt
-system_prompt = ""
-with open("system_prompt_main.txt", "r") as file:
-    system_prompt += file.read()
-    system_prompt = system_prompt.replace("{{DATE}}", datetime.now().strftime("%Y-%m-%d"))
-
-# set up thread namer
-thread_namer = ""
-with open("system_prompt_name_thread.txt", "r") as file:
-    thread_namer += file.read()
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -83,110 +71,10 @@ class ImageButtons(discord.ui.View):
     def __init__(self):
         super().__init__()
         self.upscaled_urls = [None, None, None, None]
-        self.add_item(Button(style=ButtonStyle.primary, label="U1", custom_id="0", row=0, emoji="↕"))
-        self.add_item(Button(style=ButtonStyle.primary, label="U2", custom_id="1", row=0, emoji="↕"))
-        self.add_item(Button(style=ButtonStyle.primary, label="U3", custom_id="2", row=1, emoji="↕"))
-        self.add_item(Button(style=ButtonStyle.primary, label="U4", custom_id="3", row=1, emoji="↕"))
-        for item in self.children:
-            item.callback = self.dispatch
-
-    async def dispatch(self, interaction: discord.Interaction):
-        custom_id = int(interaction.data["custom_id"])
-        if(self.upscaled_urls[custom_id] != None):
-            await interaction.response.send_message(f"Image already upscaled. It can be seen [here]({self.upscaled_urls[custom_id]}).", ephemeral=True)
-            return
-        userid = interaction.user.id
-
-        # grab image
-        try:
-            image = Image.open(io.BytesIO(requests.get(interaction.message.attachments[0].url).content))
-        except:
-            await interaction.response.send_message("Image failed to load.", embeds=None, ephemeral=True)
-            return
-
-        fields = interaction.message.embeds[0].fields
-        prompt = fields[1].value
-        negative_prompt = fields[2].value
-        aspect_ratio = fields[3].value
-        quantized_aspect_ratio = fields[4].value
-        resolution = image.size
-
-        if(negative_prompt == 'Default ("bad quality, worst quality, blurry, out of focus, cropped, out of frame, deformed, bad hands, bad anatomy")'):
-            negative_prompt = "bad quality, worst quality, blurry, out of focus, cropped, out of frame, deformed, bad hands, bad anatomy"
-
-        embed = ImageEmbed("Upscale Job", (128, 0, 255), prompt, negative_prompt, aspect_ratio, quantized_aspect_ratio, resolution)
-
-        # update embed
-        embed.set_field_at(
-            3,
-            name="Original Resolution",
-            value=f"{int(image.width / 2)}x{int(image.height / 2)}",
-            inline=True
-        )
-        embed.set_field_at(
-            4,
-            name="New Resolution",
-            value=f"{image.width}x{image.height}",
-            inline=True
-        )
-        embed.remove_field(5)
-
-        await interaction.response.send_message(
-            f"<@{userid}> Upscaling image...",
-            embed=embed
-        )
-        initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
-        self.upscaled_urls[custom_id] = initial_message.jump_url
-        self.children[custom_id].url = initial_message.jump_url
-
-        # crop image
-        top, left, right, bottom = 0, 0, int(image.width / 2), int(image.height / 2)
-        if(custom_id == 1):
-            left, right = int(image.width / 2), image.width
-        if(custom_id == 2):
-            top, bottom = int(image.height / 2), image.height
-        if(custom_id == 3):
-            top, left, right, bottom = int(image.height / 2), int(image.width / 2), image.width, image.height
-        cropped_image = image.crop((left, top, right, bottom))
-
-        # encode b64
-        with io.BytesIO() as image_binary:
-            cropped_image.save(image_binary, "PNG")
-            sent_file = base64.b64encode(image_binary.getvalue()).decode("utf-8")
-        payload = {
-            "prompt": prompt,
-            "image": sent_file
-        }
-
-        # send runpod request
-        run_request = upscale.run(payload)
-        progress_started = False
-        while(True):
-            status = run_request.status()
-            if(status == "IN_PROGRESS" and not progress_started):
-                embed.set_field_at(0, name="Status", value="In progress...")
-                progress_started = True
-                await initial_message.edit(embed=embed)
-            if(status == "COMPLETED"):
-                embed.set_field_at(0, name="Status", value="Loading images...")
-                await initial_message.edit(embed=embed)
-                break
-            await asyncio.sleep(1)
-
-        # receive output
-        output = Image.open(io.BytesIO(base64.b64decode(run_request.output()[0])))
-
-        with io.BytesIO() as image_binary:
-            output.save(image_binary, "PNG")
-            image_binary.seek(0)
-            sent_file = discord.File(fp=image_binary, filename="grid.png")
-
-        await initial_message.add_files(sent_file)
-        embed.set_field_at(0, name="Status", value="Completed")
-        await initial_message.edit(
-            content=f"<@{userid}> Request completed.",
-            embed=embed
-        )
+        self.add_item(Button(style=ButtonStyle.primary, label="U1", custom_id="upscale_0", row=0, emoji="↕"))
+        self.add_item(Button(style=ButtonStyle.primary, label="U2", custom_id="upscale_1", row=0, emoji="↕"))
+        self.add_item(Button(style=ButtonStyle.primary, label="U3", custom_id="upscale_2", row=1, emoji="↕"))
+        self.add_item(Button(style=ButtonStyle.primary, label="U4", custom_id="upscale_3", row=1, emoji="↕"))
 
 async def awaitResponse(repetition, userid):
     while(True):
@@ -202,16 +90,17 @@ async def awaitResponse(repetition, userid):
             await initial_message.edit(embed=embed)
 
             output = repetition["runpod_request"].output()
-            image1 = Image.open(io.BytesIO(base64.b64decode(output[0])))
-            image2 = Image.open(io.BytesIO(base64.b64decode(output[1])))
-            image3 = Image.open(io.BytesIO(base64.b64decode(output[2])))
-            image4 = Image.open(io.BytesIO(base64.b64decode(output[3])))
-            width, height = image1.size
-            grid = Image.new("RGB", (width * 2, height * 2))
-            grid.paste(image1, (0, 0))
-            grid.paste(image2, (width, 0))
-            grid.paste(image3, (0, height))
-            grid.paste(image4, (width, height))
+            images = [Image.open(io.BytesIO(base64.b64decode(image))) for image in output]
+            width, height = images[0].size
+            if(len(images) == 1):
+                grid = Image.new("RGB", (width, height))
+                grid.paste(images[0], (0, 0))
+            else:
+                grid = Image.new("RGB", (width * 2, height * 2))
+                grid.paste(images[0], (0, 0))
+                grid.paste(images[1], (width, 0))
+                grid.paste(images[2], (0, height))
+                grid.paste(images[3], (width, height))
 
             with io.BytesIO() as image_binary:
                 grid.save(image_binary, "PNG")
@@ -322,8 +211,6 @@ async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt
                 "batch_size": 4,
                 "width": width,
                 "height": height,
-                "steps": 4,
-                "guidance": 0.0
             }
         else:
             payload = {
@@ -332,8 +219,6 @@ async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt
                 "width": width,
                 "height": height,
                 "negative_prompt": negative_prompt,
-                "steps": 6,
-                "guidance": 0.0
             }
         
         # initialize serverless request
@@ -536,5 +421,99 @@ async def preprocessCommand(interaction: discord.Interaction, image_url: str):
     await interaction.followup.send("Image processed.")
     initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
     await initial_message.add_files(sent_file)
+
+@client.event
+async def on_interaction(interaction):
+    if(interaction.type != discord.InteractionType.component):
+        return
+    custom_id = interaction.data["custom_id"]
+    message = interaction.message
+    userid = interaction.user.id
+    if(re.match(f"^upscale_\d$", custom_id)):
+        # get message data
+        fields  = message.embeds[0].fields
+        prompt = None
+        for field in fields:
+            if(field.name == "Prompt"):
+                prompt = field.value
+                break
+        if(prompt == None):
+            await interaction.response.send_message("Unable to load prompt from original message.", ephemeral=True)
+            return
+        negative_prompt = "bad quality, worst quality, blurry, out of focus, cropped, out of frame, deformed, bad hands, bad anatomy"
+        for field in fields:
+            if(field.name == "Negative Prompt"):
+                negative_prompt = field.value
+                break
+        aspect_ratio = ""
+        for field in fields:
+            if(field.name == "Quantized Aspect Ratio"):
+                aspect_ratio = field.value
+                break
+
+        # create embed
+        embed = ImageEmbed("Upscale Job", (128, 0, 255), prompt, negative_prompt, aspect_ratio, aspect_ratio, (1024, 1024))
+
+        # send initial message
+        await interaction.response.send_message(
+            f"<@{userid}> Upscaling image...",
+            embed=embed
+        )
+        initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
+
+        # download original image
+        try:
+            response  = requests.get(message.attachments[0].url)
+            response.raise_for_status()
+        except:
+            await interaction.followup.send("Failed to get image.", ephemeral=True)
+            await initial_message.delete()
+            return
+        image_binary = response.content
+        image = Image.open(io.BytesIO(image_binary))
+        embed.set_field_at(
+            3,
+            name="Original Resolution",
+            value=f"{image.width // 2}x{image.height // 2}",
+            inline=True
+        )
+        embed.set_field_at(
+            4,
+            name="New Resolution",
+            value=f"{image.width}x{image.height}",
+            inline=True
+        )
+        embed.remove_field(5)
+        await initial_message.edit(embed=embed)
+
+        # crop image
+        top, left, right, bottom = 0, 0, image.width // 2, image.height // 2
+        if(custom_id == "upscale_2"):
+            left, right = image.width // 2, image.width
+        if(custom_id == "upscale_3"):
+            top, bottom = image.height // 2, image.height
+        if(custom_id == "upscale_4"):
+            top, left, right, bottom = image.height // 2, image.width // 2, image.width, image.height
+        cropped_image = image.crop((left, top, right, bottom))
+
+        # send runpod request
+        with io.BytesIO() as image_binary:
+            cropped_image.save(image_binary, "PNG")
+            image_binary.seek(0)
+            sent_file = base64.b64encode(image_binary.getvalue()).decode("utf-8")
+        payload = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "image": sent_file
+        }
+        run_request = upscale.run(payload)
+        request_metadata = {
+            "message": initial_message,
+            "runpod_request": run_request,
+            "progress_started": False,
+            "embed": embed,
+            "uploaded": False
+        }
+        await awaitResponse(request_metadata, userid)
 
 client.run(os.getenv("DISCORD_CLIENT_TOKEN"))
