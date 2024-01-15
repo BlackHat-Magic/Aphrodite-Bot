@@ -7,7 +7,7 @@ from PIL import Image, PngImagePlugin
 from discord.ext import commands
 from dotenv import load_dotenv
 from datetime import datetime
-import discord, os, re, requests, base64, io, runpod, time, asyncio, cv2, numpy
+import discord, os, re, requests, base64, io, runpod, time, asyncio, cv2, numpy, json
 
 # set up environment variables
 load_dotenv()
@@ -27,12 +27,19 @@ openposeFacePreprocessor = Processor("openpose_face")
 openposeHandPreprocessor = Processor("openpose_hand")
 openposeFullPreprocessor = Processor("openpose_full")
 
+with open("./styles.json", "r") as file:
+    style_dict = json.load(file)
+styles = list(style_dict.keys())
+if("Enhance" in styles):
+    styles.remove("Enhance")
+
 class ImageEmbed(discord.Embed):
-    def __init__(self, title, rgb, prompt, negative_prompt, aspect_ratio, quantized_aspect_ratio, resolution):
+    def __init__(self, title, rgb, prompt, style, negative_prompt, aspect_ratio, quantized_aspect_ratio, resolution):
         super().__init__(title=title, color=discord.Color.from_rgb(*(rgb)))
         self.add_field(name="Status", value="In queue...", inline=True)
         self.add_field(name="Prompt", value=prompt, inline=False)
-        self.add_field(name="Negative Prompt", value=negative_prompt, inline=False)
+        self.add_field(name="Style", value=style if style else "None", inline=False)
+        self.add_field(name="Negative Prompt", value=negative_prompt if negative_prompt else "N/A", inline=False)
         self.add_field(name="Desired Aspect Ratio", value=aspect_ratio, inline=True)
         self.add_field(name="Quantized Aspect Ratio", value=quantized_aspect_ratio, inline=True)
         self.add_field(name="Resolution", value="{}x{}".format(*resolution), inline=True)
@@ -149,7 +156,9 @@ async def on_ready():
         print(e)
 
 @client.tree.command(name="imagine")
-async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt: str = None, aspect_ratio: str = None, repeat: int=1):
+@discord.app_commands.describe(style="Style your image")
+@discord.app_commands.choices(style=[discord.app_commands.Choice(name=style, value=style) for style in styles])
+async def imagine(interaction: discord.Interaction, prompt: str, style: str = None, negative_prompt: str = None, aspect_ratio: str = None, repeat: int=1):
     if(repeat > 8):
         await interaction.response.send_message(
             "Too many repeats requested; aborting...",
@@ -165,29 +174,32 @@ async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt
     userid = interaction.user.id
     repetitions = []
 
+    if(style == "Enhance" or style == None):
+        template = style_dict["Enhance"]
+    else:
+        template = style_dict[style]
+    true_prompt = template["positive"].format(prompt=prompt)
+    true_negative_prompt = negative_prompt
+    if(negative_prompt):
+        true_negative_prompt = template["negative"] + f", {negative_prompt}"
+
+    # get aspect ratio
+    desired_ratio = 1.0
+    if(aspect_ratio and not re.match(r"^\d+:\d+$", aspect_ratio)):
+        await interaction.response.send_message(
+            contents="Invalid aspect ratio. Format as `width:height` (e.g. 16:9, 1:1). Numbers must be integers.",
+            embeds=None,
+            ephemeral=True
+        )
+        return
+    if(aspect_ratio != None):
+        desired_ratio = int(aspect_ratio.split(":")[0]) / int(aspect_ratio.split(":")[1])
+    res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))
+    width, height = res_info[2]
+
     for i in range(repeat):
-        # parse negative_prompt
-        if(negative_prompt == None):
-            displayed_negative_prompt = "Default (\"bad quality, worst quality, blurry, out of focus, cropped, out of frame, deformed, bad hands, bad anatomy\")"
-        else:
-            displayed_negative_prompt = negative_prompt
-
-        # get aspect ratio
-        desired_ratio = 1.0
-        if(aspect_ratio and not re.match(r"^\d+:\d+$", aspect_ratio)):
-            await interaction.response.send_message(
-                contents="Invalid aspect ratio. Format as `width:height` (e.g. 16:9, 1:1). Numbers must be integers.",
-                embeds=None,
-                ephemeral=True
-            )
-            return
-        if(aspect_ratio != None):
-            desired_ratio = int(aspect_ratio.split(":")[0]) / int(aspect_ratio.split(":")[1])
-        res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))
-        width, height = res_info[2]
-
         # setup embed
-        embed = ImageEmbed("Image Job", (0, 255, 255), prompt, displayed_negative_prompt, aspect_ratio, res_info[1], res_info[2])
+        embed = ImageEmbed("Image Job", (0, 255, 255), prompt, style, negative_prompt, aspect_ratio, res_info[1], res_info[2])
         if(i == 0):
             await interaction.response.send_message(
                 f"<@{userid}> Request processing...",
@@ -203,25 +215,15 @@ async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt
                 initial_message = message
         else:
             initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
-
-        # set up post request
-        if(negative_prompt == None):
-            payload = {
-                "prompt": prompt,
-                "batch_size": 4,
-                "width": width,
-                "height": height,
-            }
-        else:
-            payload = {
-                "prompt": prompt,
-                "batch_size": 4,
-                "width": width,
-                "height": height,
-                "negative_prompt": negative_prompt,
-            }
         
         # initialize serverless request
+        payload = {
+            "prompt": true_prompt,
+            "batch_size": 4,
+            "width": width,
+            "height": height,
+            "negative_prompt": true_negative_prompt,
+        }
         run_request = generic.run(payload)
 
         repetitions.append({
@@ -235,7 +237,9 @@ async def imagine(interaction: discord.Interaction, prompt: str, negative_prompt
     await asyncio.gather(*(awaitResponse(repetition, userid) for repetition in repetitions))
 
 @client.tree.command(name="controlnet")
-async def retrieve_controlnet(interaction: discord.Interaction, prompt: str, image_url: str, negative_prompt: str = None, aspect_ratio: str = None, repeat: int=1):
+@discord.app_commands.describe(style="Style your image")
+@discord.app_commands.choices(style=[discord.app_commands.Choice(name=style, value=style) for style in styles])
+async def retrieve_controlnet(interaction: discord.Interaction, prompt: str, image_url: str, style: str = None, negative_prompt: str = None, aspect_ratio: str = None, repeat: int=1):
     if(repeat > 8):
         await interaction.response.send_message(
             "Too many repeats requested; aborting...",
@@ -278,31 +282,34 @@ async def retrieve_controlnet(interaction: discord.Interaction, prompt: str, ima
 
     await initial_message.edit(content="Preprocessor model selected.", view=view)
 
+    if(style == "Enhance" or style == None):
+        template = style_dict["Enhance"]
+    else:
+        template = style_dict[style]
+    true_prompt = template["positive"].format(prompt=prompt)
+    true_negative_prompt = negative_prompt
+    if(negative_prompt):
+        true_negative_prompt = template["negative"] + f", {negative_prompt}"
+
+    # get aspect ratio
+    desired_ratio = 1.0
+    if(aspect_ratio and not re.match(r"^\d+:\d+$", aspect_ratio)):
+        await interaction.response.send_message(
+            contents="Invalid aspect ratio. Format as `width:height` (e.g. 16:9, 1:1). Numbers must be integers.",
+            embeds=None,
+            ephemeral=True
+        )
+        return
+    if(aspect_ratio == None):
+        desired_ratio = image.width / image.height
+    else:
+        desired_ratio = int(aspect_ratio.split(":")[0]) / int(aspect_ratio.split(":")[1])
+    res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))
+    width, height = res_info[2]
+
     for i in range(repeat):
-        # parse negative_prompt
-        if(negative_prompt == None):
-            displayed_negative_prompt = "Default (\"bad quality, worst quality, blurry, out of focus, cropped, out of frame, deformed, bad hands, bad anatomy\")"
-        else:
-            displayed_negative_prompt = negative_prompt
-
-        # get aspect ratio
-        desired_ratio = 1.0
-        if(aspect_ratio and not re.match(r"^\d+:\d+$", aspect_ratio)):
-            await interaction.response.send_message(
-                contents="Invalid aspect ratio. Format as `width:height` (e.g. 16:9, 1:1). Numbers must be integers.",
-                embeds=None,
-                ephemeral=True
-            )
-            return
-        if(aspect_ratio == None):
-            desired_ratio = image.width / image.height
-        else:
-            desired_ratio = int(aspect_ratio.split(":")[0]) / int(aspect_ratio.split(":")[1])
-        res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))
-        width, height = res_info[2]
-
         # setup embed
-        embed = ImageEmbed("Controlnet Job", (255, 128, 0), prompt, displayed_negative_prompt, aspect_ratio, res_info[1], res_info[2])
+        embed = ImageEmbed("Controlnet Job", (255, 128, 0), prompt, style, negative_prompt, aspect_ratio, res_info[1], res_info[2])
         await interaction.followup.send(
             f"<@{userid}> Request processing...",
             embed=embed
@@ -319,29 +326,17 @@ async def retrieve_controlnet(interaction: discord.Interaction, prompt: str, ima
             model = "depth"
         else:
             model = "openpose"
-
-        # set up post request
-        if(negative_prompt == None):
-            payload = {
-                "prompt": prompt,
-                "batch_size": 4,
-                "width": width,
-                "height": height,
-                "images": [sent_file],
-                "model": model
-            }
-        else:
-            payload = {
-                "prompt": prompt,
-                "batch_size": 4,
-                "width": width,
-                "height": height,
-                "negative_prompt": negative_prompt,
-                "images": [sent_file],
-                "model": model
-            }
         
         # initialize serverless request
+        payload = {
+            "prompt": true_prompt,
+            "batch_size": 4,
+            "width": width,
+            "height": height,
+            "negative_prompt": true_negative_prompt,
+            "images": [sent_file],
+            "model": model
+        }
         run_request = controlnet.run(payload)
 
         repetitions.append({
@@ -440,7 +435,7 @@ async def on_interaction(interaction):
         if(prompt == None):
             await interaction.response.send_message("Unable to load prompt from original message.", ephemeral=True)
             return
-        negative_prompt = "bad quality, worst quality, blurry, out of focus, cropped, out of frame, deformed, bad hands, bad anatomy"
+        negative_prompt = None
         for field in fields:
             if(field.name == "Negative Prompt"):
                 negative_prompt = field.value
@@ -450,9 +445,19 @@ async def on_interaction(interaction):
             if(field.name == "Quantized Aspect Ratio"):
                 aspect_ratio = field.value
                 break
+        style = "Enhance"
+        for field in fields:
+            if(field.name == "Style" and field.value != "None" and field.value != None):
+                style = field.value
+                break
+        template = style_dict[style]
+        true_prompt = template["positive"].format(prompt=prompt)
+        true_negative_prompt = negative_prompt
+        if(negative_prompt != None):
+            true_negative_prompt = template["negative"] + f", {negative_prompt}"
 
         # create embed
-        embed = ImageEmbed("Upscale Job", (128, 0, 255), prompt, negative_prompt, aspect_ratio, aspect_ratio, (1024, 1024))
+        embed = ImageEmbed("Upscale Job", (128, 0, 255), prompt, style if style != "Enhance" else None, negative_prompt, aspect_ratio, aspect_ratio, (1024, 1024))
 
         # send initial message
         await interaction.response.send_message(
@@ -472,27 +477,27 @@ async def on_interaction(interaction):
         image_binary = response.content
         image = Image.open(io.BytesIO(image_binary))
         embed.set_field_at(
-            3,
+            4,
             name="Original Resolution",
             value=f"{image.width // 2}x{image.height // 2}",
             inline=True
         )
         embed.set_field_at(
-            4,
+            5,
             name="New Resolution",
             value=f"{image.width}x{image.height}",
             inline=True
         )
-        embed.remove_field(5)
+        embed.remove_field(6)
         await initial_message.edit(embed=embed)
 
         # crop image
         top, left, right, bottom = 0, 0, image.width // 2, image.height // 2
-        if(custom_id == "upscale_2"):
+        if(custom_id == "upscale_1"):
             left, right = image.width // 2, image.width
-        if(custom_id == "upscale_3"):
+        if(custom_id == "upscale_2"):
             top, bottom = image.height // 2, image.height
-        if(custom_id == "upscale_4"):
+        if(custom_id == "upscale_3"):
             top, left, right, bottom = image.height // 2, image.width // 2, image.width, image.height
         cropped_image = image.crop((left, top, right, bottom))
 
@@ -502,8 +507,8 @@ async def on_interaction(interaction):
             image_binary.seek(0)
             sent_file = base64.b64encode(image_binary.getvalue()).decode("utf-8")
         payload = {
-            "prompt": prompt,
-            "negative_prompt": negative_prompt,
+            "prompt": true_prompt,
+            "negative_prompt": true_negative_prompt,
             "image": sent_file
         }
         run_request = upscale.run(payload)
