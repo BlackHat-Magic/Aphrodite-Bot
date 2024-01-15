@@ -66,5 +66,9 @@
     "Texture": {
         "positive": "texture {prompt} top down close-up",
         "negative": "ugly, deformed, noisy, blurry"
+    },
+    "Raw Prompt": {
+        "positive": "{prompt}",
+        "negative": ""
     }
 }

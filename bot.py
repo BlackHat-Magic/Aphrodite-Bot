@@ -181,7 +181,10 @@ async def imagine(interaction: discord.Interaction, prompt: str, style: str = No
     true_prompt = template["positive"].format(prompt=prompt)
     true_negative_prompt = negative_prompt
     if(negative_prompt):
-        true_negative_prompt = template["negative"] + f", {negative_prompt}"
+        if(style == "Raw Prompt"):
+            true_negative_prompt = negative_prompt
+        else:
+            true_negative_prompt = template["negative"] + f", {negative_prompt}"
 
     # get aspect ratio
     desired_ratio = 1.0
@@ -289,7 +292,10 @@ async def retrieve_controlnet(interaction: discord.Interaction, prompt: str, ima
     true_prompt = template["positive"].format(prompt=prompt)
     true_negative_prompt = negative_prompt
     if(negative_prompt):
-        true_negative_prompt = template["negative"] + f", {negative_prompt}"
+        if(style == "Raw Prompt"):
+            true_negative_prompt = negative_prompt
+        else:
+            true_negative_prompt = template["negative"] + f", {negative_prompt}"
 
     # get aspect ratio
     desired_ratio = 1.0
