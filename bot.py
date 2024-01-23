@@ -83,7 +83,7 @@ class ImageButtons(discord.ui.View):
         self.add_item(Button(style=ButtonStyle.primary, label="U3", custom_id="upscale_2", row=1, emoji="↕"))
         self.add_item(Button(style=ButtonStyle.primary, label="U4", custom_id="upscale_3", row=1, emoji="↕"))
 
-async def awaitResponse(repetition, userid):
+async def awaitResponse(repetition, userid, buttons):
     while(True):
         initial_message = repetition["message"]
         status = repetition["runpod_request"].status()
@@ -116,7 +116,10 @@ async def awaitResponse(repetition, userid):
 
             await initial_message.add_files(sent_file)
             embed.set_field_at(0, name="Status", value="Completed")
-            view = ImageButtons()
+            if(buttons == "upscale"):
+                view = ImageButtons()
+            else:
+                view = None
             await initial_message.edit(
                 content=f"<@{userid}> Request completed.",
                 embed=embed,
@@ -237,7 +240,7 @@ async def imagine(interaction: discord.Interaction, prompt: str, style: str = No
             "uploaded": False
         })
     
-    await asyncio.gather(*(awaitResponse(repetition, userid) for repetition in repetitions))
+    await asyncio.gather(*(awaitResponse(repetition, userid, "upscale") for repetition in repetitions))
 
 @client.tree.command(name="controlnet")
 @discord.app_commands.describe(style="Style your image")
@@ -353,7 +356,7 @@ async def retrieve_controlnet(interaction: discord.Interaction, prompt: str, ima
             "uploaded": False
         })
     
-    await asyncio.gather(*(awaitResponse(repetition, userid) for repetition in repetitions))
+    await asyncio.gather(*(awaitResponse(repetition, userid, "upscale") for repetition in repetitions))
 
 @client.tree.command(name="preprocess")
 async def preprocessCommand(interaction: discord.Interaction, image_url: str):
@@ -498,24 +501,30 @@ async def on_interaction(interaction):
         await initial_message.edit(embed=embed)
 
         # crop image
-        top, left, right, bottom = 0, 0, image.width // 2, image.height // 2
+        cropped_image = Image.new("RGB", (image.width // 2, image.height // 2))
+        print(cropped_image.size)
+        top, left = 0, 0
         if(custom_id == "upscale_1"):
-            left, right = image.width // 2, image.width
+            top = image.width // -2
         if(custom_id == "upscale_2"):
-            top, bottom = image.height // 2, image.height
+            left = image.height // -2
         if(custom_id == "upscale_3"):
-            top, left, right, bottom = image.height // 2, image.width // 2, image.width, image.height
-        cropped_image = image.crop((left, top, right, bottom))
+            left, top = image.width // -2, image.height // -2
+        cropped_image.paste(image, (top, left))
 
         # send runpod request
+        # buffer = io.BytesIO()
+        # cropped_image.save(buffer, format="PNG")
+        # cropped_image.save("./to_be_upscaled.png", format="PNG")
+        # buffer.seek(0)
+        # sent_file = base64.b64encode(buffer.getvalue()).decode()
         with io.BytesIO() as image_binary:
-            cropped_image.save(image_binary, "PNG")
+            cropped_image.save(image_binary, format="PNG")
             image_binary.seek(0)
-            sent_file = base64.b64encode(image_binary.getvalue()).decode("utf-8")
+            sent_file = base64.b64encode(image_binary.getvalue()).decode()
         payload = {
-            "prompt": true_prompt,
-            "negative_prompt": true_negative_prompt,
-            "image": sent_file
+            "image": sent_file,
+            "scale": 4
         }
         run_request = upscale.run(payload)
         request_metadata = {
@@ -525,6 +534,6 @@ async def on_interaction(interaction):
             "embed": embed,
             "uploaded": False
         }
-        await awaitResponse(request_metadata, userid)
+        await awaitResponse(request_metadata, userid, None)
 
 client.run(os.getenv("DISCORD_CLIENT_TOKEN"))
