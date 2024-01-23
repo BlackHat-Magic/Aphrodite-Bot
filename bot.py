@@ -502,7 +502,6 @@ async def on_interaction(interaction):
 
         # crop image
         cropped_image = Image.new("RGB", (image.width // 2, image.height // 2))
-        print(cropped_image.size)
         top, left = 0, 0
         if(custom_id == "upscale_1"):
             top = image.width // -2
@@ -523,6 +522,7 @@ async def on_interaction(interaction):
             image_binary.seek(0)
             sent_file = base64.b64encode(image_binary.getvalue()).decode()
         payload = {
+            "prompt": prompt,
             "image": sent_file,
             "scale": 4
         }
