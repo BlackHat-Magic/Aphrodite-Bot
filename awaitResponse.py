@@ -1,6 +1,6 @@
 from ui_utils import ImageButtons
 from PIL import Image
-import asyncio, io, base64
+import asyncio, io, base64, discord
 
 async def awaitResponse(repetition, userid, buttons):
     while(True):

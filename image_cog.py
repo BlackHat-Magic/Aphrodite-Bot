@@ -5,7 +5,7 @@ from discord.ext import commands
 from ui_utils import ImageEmbed
 from dotenv import load_dotenv
 from PIL import Image
-import discord, runpod, asyncio, json, os, io, base64
+import discord, runpod, asyncio, json, os, io, base64, cv2, numpy, re, requests
 
 # set up environment variables
 load_dotenv()
@@ -59,6 +59,7 @@ class ImageCog(commands.Cog):
     def __init__(self, client):
         self.client = client
     async def generate_image(
+        self,
         interaction: discord.Interaction, 
         prompt: str, 
         style: str=None, 
@@ -119,13 +120,6 @@ class ImageCog(commands.Cog):
         desired_ratio = 1.0
         res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))
         width, height = res_info[2]
-        
-        # get the latest image
-        if(type(interaction.channel) == discord.DMChannel):
-            async for message in interaction.channel.history(limit=1):
-                initial_message = message
-        else:
-            initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
 
         # repetitions
         for i in range(repeat):
@@ -140,10 +134,17 @@ class ImageCog(commands.Cog):
                 res_info[1],
                 res_info[2]
             )
-            interaction.followup.send(
+            await interaction.followup.send(
                 f"<@{userid}> Request processing...",
                 embed=embed
             )
+        
+            # get the latest image
+            if(type(interaction.channel) == discord.DMChannel):
+                async for message in interaction.channel.history(limit=1):
+                    initial_message = message
+            else:
+                initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
             
             payload = {
                 "prompt": true_prompt,
@@ -177,6 +178,7 @@ class ImageCog(commands.Cog):
         aspect_ratio=[app_commands.Choice(name=ratio[1], value=ratio[1]) for ratio in supported_ratios]
     )
     async def imagine(
+        self,
         interaction: discord.Interaction, 
         prompt: str, 
         style: str=None, 
@@ -185,8 +187,9 @@ class ImageCog(commands.Cog):
         repeat: int=1
     ):
         await interaction.response.defer()
-        self.generate_image(
+        await self.generate_image(
             interaction, 
+            prompt,
             style, 
             negative_prompt, 
             aspect_ratio, 
@@ -202,6 +205,7 @@ class ImageCog(commands.Cog):
         preprocessor=[app_commands.Choice(name=preprocessor, value=preprocessor.split(" ")[0].casefold()) for preprocessor in preprocessors.keys()]
     )
     async def controlnet_command(
+        self,
         interaction: discord.Interaction, 
         prompt: str, 
         image_url: str,
@@ -225,7 +229,7 @@ class ImageCog(commands.Cog):
             )
             return
 
-        self.generate_image(
+        await self.generate_image(
             interaction, 
             style, 
             negative_prompt, 
@@ -241,7 +245,7 @@ class ImageCog(commands.Cog):
     @app_commands.choices(
         preprocessor=[app_commands.Choice(name=preprocessor, value=preprocessor) for preprocessor in preprocessors.keys()]
     )
-    async def preprocessCommand(interaction: discord.Interaction, image_url: str, preprocessor: str):
+    async def preprocessCommand(self, interaction: discord.Interaction, image_url: str, preprocessor: str):
         await interaction.response.defer()
         try:
             response = requests.get(image_url)
@@ -291,7 +295,7 @@ class ImageCog(commands.Cog):
         await initial_message.add_files(sent_file)
 
     @commands.Cog.listener()
-    async def on_interaction(interaction):
+    async def on_interaction(self, interaction):
         # I'll deal with this later...
         if(interaction.type != discord.InteractionType.component):
             return
@@ -344,9 +348,10 @@ class ImageCog(commands.Cog):
             try:
                 response  = requests.get(message.attachments[0].url)
                 response.raise_for_status()
-            except:
+            except Exception as e:
                 await interaction.followup.send("Failed to get image.", ephemeral=True)
                 await initial_message.delete()
+                print(e)
                 return
             image_binary = response.content
             image = Image.open(io.BytesIO(image_binary))
