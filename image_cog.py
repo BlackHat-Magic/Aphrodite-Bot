@@ -1,4 +1,4 @@
-from controlnet_aux.processor import Processor
+# from controlnet_aux.processor import Processor
 from awaitResponse import awaitResponse
 from discord import app_commands
 from discord.ext import commands
@@ -42,18 +42,18 @@ supported_ratios = [
 
 
 # instantiate the controlnet preprocessors
-depthPreprocessor = Processor("depth_midas")
-openposePreprocessor = Processor("openpose")
-openposeFacePreprocessor = Processor("openpose_face")
-openposeHandPreprocessor = Processor("openpose_hand")
-openposeFullPreprocessor = Processor("openpose_full")
-preprocessors = {
-    "Canny Edge": depthPreprocessor,
-    "Depth Map": openposePreprocessor,
-    "Openpose (With Face)": openposeFacePreprocessor,
-    "Openpose (Hands Only)": openposeHandPreprocessor,
-    "Openpose (Full)": openposeFullPreprocessor
-}
+# depthPreprocessor = Processor("depth_midas")
+# openposePreprocessor = Processor("openpose")
+# openposeFacePreprocessor = Processor("openpose_face")
+# openposeHandPreprocessor = Processor("openpose_hand")
+# openposeFullPreprocessor = Processor("openpose_full")
+# preprocessors = {
+#     "Canny Edge": depthPreprocessor,
+#     "Depth Map": openposePreprocessor,
+#     "Openpose (With Face)": openposeFacePreprocessor,
+#     "Openpose (Hands Only)": openposeHandPreprocessor,
+#     "Openpose (Full)": openposeFullPreprocessor
+# }
 
 class ImageCog(commands.Cog):
     def __init__(self, client):
@@ -186,6 +186,7 @@ class ImageCog(commands.Cog):
         aspect_ratio: str=None, 
         repeat: int=1
     ):
+        print(type(interaction))
         await interaction.response.defer()
         await self.generate_image(
             interaction, 
@@ -199,22 +200,23 @@ class ImageCog(commands.Cog):
     
     @app_commands.command(name="controlnet")
     @app_commands.describe(style="Style your image", image_url="The URL of the PREPROCESSED image to be used for conditioning. istg if you message me about controlnet looking wonky and I find out you're not preprocessing the images with the /preprocess command, I will personally remove your spine. rtfm.")
-    @app_commands.choices(
-        style=[app_commands.Choice(name=style, value=style) for style in styles],
-        aspect_ratio=[app_commands.Choice(name=ratio[1], value=ratio[1]) for ratio in supported_ratios],
-        preprocessor=[app_commands.Choice(name=preprocessor, value=preprocessor.split(" ")[0].casefold()) for preprocessor in preprocessors.keys()]
-    )
+    # @app_commands.choices(
+    #     style=[app_commands.Choice(name=style, value=style) for style in styles],
+    #     aspect_ratio=[app_commands.Choice(name=ratio[1], value=ratio[1]) for ratio in supported_ratios],
+    #     preprocessor=[app_commands.Choice(name=preprocessor, value=preprocessor.split(" ")[0].casefold()) for preprocessor in preprocessors.keys()]
+    # )
     async def controlnet_command(
         self,
         interaction: discord.Interaction, 
         prompt: str, 
         image_url: str,
-        preprocessor: str,
+        # preprocessor: str,
         style: str=None, 
         negative_prompt: str=None, 
         aspect_ratio: str=None, 
         repeat: int=1
     ):
+        preprocessor = "canny"
         await interaction.response.defer()
         
         # obtain image
@@ -242,10 +244,11 @@ class ImageCog(commands.Cog):
         )
     
     @app_commands.command(name="preprocess")
-    @app_commands.choices(
-        preprocessor=[app_commands.Choice(name=preprocessor, value=preprocessor) for preprocessor in preprocessors.keys()]
-    )
-    async def preprocessCommand(self, interaction: discord.Interaction, image_url: str, preprocessor: str):
+    # @app_commands.choices(
+    #     preprocessor=[app_commands.Choice(name=preprocessor, value=preprocessor) for preprocessor in preprocessors.keys()]
+    # )
+    # async def preprocessCommand(self, interaction: discord.Interaction, image_url: str, preprocessor: str):
+    async def preprocessCommand(self, interaction: discord.Interaction, image_url: str):
         await interaction.response.defer()
         try:
             response = requests.get(image_url)
@@ -263,23 +266,9 @@ class ImageCog(commands.Cog):
 
         is_PIL = False
         loop = asyncio.get_event_loop()
-        match view.chosen_controlnet:
-            case "Canny Edge":
-                preprocessed = await loop.run_in_executor(None, lambda: cv2.Canny(arr_image, 100, 200))
-            case "Openpose":
-                preprocessed = await loop.run_in_executor(None, lambda: openposePreprocessor(arr_image, to_pil=True))
-                is_PIL = True
-            case "Openpose (Hands Only)":
-                preprocessed = await loop.run_in_executor(None, lambda: openposeHandPreprocessor(arr_image, to_pil=True))
-                is_PIL = True
-            case "Openpose (With Face)":
-                preprocessed = await loop.run_in_executor(None, lambda: openposeFacePreprocessor(arr_image, to_pil=True))
-                is_PIL = True
-            case "Openpose (Full)":
-                preprocessed = await loop.run_in_executor(None, lambda: openposeFullPreprocessor(arr_image, to_pil=True))
-                is_PIL = True
-            case "Depth":
-                preprocessed = await loop.run_in_executor(None, lambda: depthPreprocessor(arr_image, to_pil=True))
+        
+        await initial_message.edit(content="Preprocessor model selected.")
+        preprocessed = await loop.run_in_executor(None, lambda: cv2.Canny(arr_image, 100, 200))
         
         await initial_message.edit(content="Preprocessor model selected.")
         
