@@ -46,4 +46,13 @@ async def awaitResponse(repetition, userid, buttons):
             )
             repetition["uploaded"] = True
             break
+        if(status in ["FAILED", "ERROR"] and not repetition["uploaded"]):
+            repetition["uploaded"] = True
+            await initial_message.edit(
+                content="Image generation failed.",
+                embed=None,
+                view=None,
+                ephemeral=True
+            )
+            break
         await asyncio.sleep(1)

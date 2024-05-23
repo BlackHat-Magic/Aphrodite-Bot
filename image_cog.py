@@ -291,10 +291,13 @@ class ImageCog(commands.Cog):
         custom_id = interaction.data["custom_id"]
         message = interaction.message
         userid = interaction.user.id
+        # check if it's an upscale request
         if(re.match(f"^upscale_\d$", custom_id)):
             # get message data
             fields  = message.embeds[0].fields
             prompt = None
+
+            # grab prompt
             for field in fields:
                 if(field.name == "Prompt"):
                     prompt = field.value
@@ -302,95 +305,51 @@ class ImageCog(commands.Cog):
             if(prompt == None):
                 await interaction.response.send_message("Unable to load prompt from original message.", ephemeral=True)
                 return
+            
+            # grab negative prompt
             negative_prompt = None
             for field in fields:
                 if(field.name == "Negative Prompt"):
                     negative_prompt = field.value
                     break
+            
+            # grab aspect ratio
             aspect_ratio = ""
             for field in fields:
                 if(field.name == "Quantized Aspect Ratio"):
                     aspect_ratio = field.value
                     break
+            if(not aspect_ratio in [ratio[1] for ratio in supported_ratios]):
+                aspect_ratio = "1:1"
+
+            # grab style
             style = "Enhance"
             for field in fields:
                 if(field.name == "Style" and field.value != "None" and field.value != None):
                     style = field.value
                     break
-            template = style_dict[style]
-            true_prompt = template["positive"].format(prompt=prompt)
-            true_negative_prompt = negative_prompt
-            if(negative_prompt != None):
-                true_negative_prompt = template["negative"] + f", {negative_prompt}"
-
-            # create embed
-            embed = ImageEmbed("Upscale Job", (128, 0, 255), prompt, style if style != "Enhance" else None, negative_prompt, aspect_ratio, aspect_ratio, (1024, 1024))
-
-            # send initial message
-            await interaction.response.send_message(
-                f"<@{userid}> Upscaling image...",
-                embed=embed
-            )
-            initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
-
-            # download original image
+            
+            # grab image
             try:
                 response  = requests.get(message.attachments[0].url)
                 response.raise_for_status()
             except Exception as e:
                 await interaction.followup.send("Failed to get image.", ephemeral=True)
-                await initial_message.delete()
                 print(e)
                 return
             image_binary = response.content
             image = Image.open(io.BytesIO(image_binary))
-            embed.set_field_at(
-                4,
-                name="Original Resolution",
-                value=f"{image.width // 2}x{image.height // 2}",
-                inline=True
-            )
-            embed.set_field_at(
-                5,
-                name="New Resolution",
-                value=f"{image.width}x{image.height}",
-                inline=True
-            )
-            embed.remove_field(6)
-            await initial_message.edit(embed=embed)
 
-            # crop image
-            cropped_image = Image.new("RGB", (image.width // 2, image.height // 2))
-            top, left = 0, 0
-            if(custom_id == "upscale_1"):
-                top = image.width // -2
-            if(custom_id == "upscale_2"):
-                left = image.height // -2
-            if(custom_id == "upscale_3"):
-                left, top = image.width // -2, image.height // -2
-            cropped_image.paste(image, (top, left))
-
-            # send runpod request
-            # buffer = io.BytesIO()
-            # cropped_image.save(buffer, format="PNG")
-            # cropped_image.save("./to_be_upscaled.png", format="PNG")
-            # buffer.seek(0)
-            # sent_file = base64.b64encode(buffer.getvalue()).decode()
-            with io.BytesIO() as image_binary:
-                cropped_image.save(image_binary, format="PNG")
-                image_binary.seek(0)
-                sent_file = base64.b64encode(image_binary.getvalue()).decode()
-            payload = {
-                "prompt": prompt,
-                "image": sent_file,
-                "scale": 2
-            }
-            run_request = upscale.run(payload)
-            request_metadata = {
-                "message": initial_message,
-                "runpod_request": run_request,
-                "progress_started": False,
-                "embed": embed,
-                "uploaded": False
-            }
-            await awaitResponse(request_metadata, userid, None)
+            # generation request
+            self.generate_image(
+                interaction,
+                prompt,
+                style,
+                negative_prompt,
+                aspect_ratio,
+                1,
+                {
+                    "name": "upscale",
+                    "conditioning": image
+                }
+            )
