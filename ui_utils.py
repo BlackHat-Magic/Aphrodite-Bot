@@ -31,10 +31,18 @@ class PreprocessorDropdown(discord.ui.View):
         self.stop()
 
 class ImageButtons(discord.ui.View):
-    def __init__(self):
+    def __init__(self, image_ids):
         super().__init__()
-        self.upscaled_urls = [None, None, None, None]
-        self.add_item(Button(style=ButtonStyle.primary, label="U1", custom_id="upscale_0", row=0, emoji="↕"))
-        self.add_item(Button(style=ButtonStyle.primary, label="U2", custom_id="upscale_1", row=0, emoji="↕"))
-        self.add_item(Button(style=ButtonStyle.primary, label="U3", custom_id="upscale_2", row=1, emoji="↕"))
-        self.add_item(Button(style=ButtonStyle.primary, label="U4", custom_id="upscale_3", row=1, emoji="↕"))
+        # get number of images
+        num_images = len(image_ids)
+        self.upscaled_urls = [None for _ in range(num_images)]
+
+        # add buttons
+        for i, id_ in enumerate(image_ids):
+            self.add_item(Button(
+                style=ButtonStyle.Primary, 
+                label=f"U{i+1}", 
+                custom_id=id_,
+                row=(0 if i+1 < num_images / 2 + 1 else 1),
+                emoji="↕"
+            ))

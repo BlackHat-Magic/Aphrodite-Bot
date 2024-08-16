@@ -11,6 +11,8 @@ import discord, runpod, asyncio, json, os, io, base64, cv2, numpy, re, requests
 load_dotenv()
 runpod.api_key = os.getenv("RUNPOD_API_KEY")
 generic = runpod.Endpoint(os.getenv("RUNPOD_GENERIC_ENDPOINT"))
+flux = runpod.Endpoint(os.getenv("RUNPOD_FLUX_ENDPOINT"))
+schnell = runpod.Endpoint(os.getenv("RUNPOD_SCHNELL_ENDPOINT"))
 upscale = runpod.Endpoint(os.getenv("RUNPOD_UPSCALE_ENDPOINT"))
 controlnet = runpod.Endpoint(os.getenv("RUNPOD_CONTROLNET_ENDPOINT"))
 
@@ -66,7 +68,8 @@ class ImageCog(commands.Cog):
         negative_prompt: str=None, 
         aspect_ratio: str=1.0, 
         repeat: int=1, 
-        conditioning: dict=None
+        conditioning: dict=None,
+        model: str=None
     ):
         # invalid stuff
         if(repeat > 8):
@@ -82,20 +85,21 @@ class ImageCog(commands.Cog):
             )
             return
         
-        sent_file = None
-        model = None
-        if(conditioning):
-            with io.BytesIO() as image_binary:
-                conditioning["conditioning"].save(image_binary, "PNG")
-                sent_file = base64.b64encode(image_binary.getvalue()).decode("utf-8")
+        # if there is a 'name' key in the conditioning dict
+        # that means this is a controlnet job
+        cn_model = None
+        if("name" in conditioning.keys()):
+            image = conditioning["conditioning"]
             if("controlnet" in conditioning["name"]):
-                model = conditioning["name"].split("_")[0]
-        if(model):
+                cn_model = conditioning["name"].split("_")[0]
             statsus = "Controlnet Job"
             color = (255, 128, 0)
-        elif(sent_file):
+        # otherwise, the only other type of request that has
+        # conditioning is upscaling
+        elif(conditioning):
             statsus = "Upscale Job"
             color = (128, 0, 255)
+        # if no conditioning, image job
         else:
             statsus = "Image Job"
             color = (0, 255, 255)
@@ -117,7 +121,6 @@ class ImageCog(commands.Cog):
             true_negative_prompt = negative_prompt
         
         # aspect ratio
-        desired_ratio = 1.0
         res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))
         width, height = res_info[2]
 
@@ -125,7 +128,7 @@ class ImageCog(commands.Cog):
         for i in range(repeat):
             # send embed
             embed = ImageEmbed(
-                "Image Job", 
+                statsus, 
                 (0, 255, 255), 
                 prompt, 
                 style, 
@@ -152,13 +155,17 @@ class ImageCog(commands.Cog):
                 "num_images": 4,
                 "width": width,
                 "height": height,
-                "images": [sent_file],
-                "model": model
+                "images_id": conditioning["image"],
+                "model": cn_model
             }
-            if(model):
+            if(cn_model):
                 run_request = controlnet.run(payload)
-            elif(sent_file):
+            elif(conditioning):
                 run_request = upscale.run(payload)
+            elif(model == "flux"):
+                run_request = flux.run(payload)
+            elif(model == "schnell"):
+                run_request = schnell.run(payload)
             else:
                 run_request = generic.run(payload)
             repetitions.append({
@@ -175,7 +182,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(style="Style your image")
     @app_commands.choices(
         style=[app_commands.Choice(name=style, value=style) for style in styles],
-        aspect_ratio=[app_commands.Choice(name=ratio[1], value=ratio[1]) for ratio in supported_ratios]
+        aspect_ratio=[app_commands.Choice(name=ratio[1], value=ratio[0]) for ratio in supported_ratios]
     )
     async def imagine(
         self,
@@ -198,8 +205,8 @@ class ImageCog(commands.Cog):
             None
         )
     
-    @app_commands.command(name="controlnet")
-    @app_commands.describe(style="Style your image", image_url="The URL of the PREPROCESSED image to be used for conditioning. istg if you message me about controlnet looking wonky and I find out you're not preprocessing the images with the /preprocess command, I will personally remove your spine. rtfm.")
+    # @app_commands.command(name="controlnet")
+    # @app_commands.describe(style="Style your image", image_url="The URL of the PREPROCESSED image to be used for conditioning. istg if you message me about controlnet looking wonky and I find out you're not preprocessing the images with the /preprocess command, I will personally remove your spine. rtfm.")
     # @app_commands.choices(
     #     style=[app_commands.Choice(name=style, value=style) for style in styles],
     #     aspect_ratio=[app_commands.Choice(name=ratio[1], value=ratio[1]) for ratio in supported_ratios],
@@ -243,7 +250,7 @@ class ImageCog(commands.Cog):
             }
         )
     
-    @app_commands.command(name="preprocess")
+    # @app_commands.command(name="preprocess")
     # @app_commands.choices(
     #     preprocessor=[app_commands.Choice(name=preprocessor, value=preprocessor) for preprocessor in preprocessors.keys()]
     # )
@@ -292,6 +299,8 @@ class ImageCog(commands.Cog):
         message = interaction.message
         userid = interaction.user.id
         # check if it's an upscale request
+        print(interaction.data)
+        return
         if(re.match(f"^upscale_\d$", custom_id)):
             # get message data
             fields  = message.embeds[0].fields
