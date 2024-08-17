@@ -35,7 +35,7 @@ async def awaitResponse(repetition, userid, buttons):
                 images = [Image.open(io.BytesIO(response.content)) for response in responses]
             # else inform the user of the error and break
             except Exception as e:
-                initial_message.edit(
+                await initial_message.edit(
                     content=f"Error retrieving output image: {e}",
                     # ephemeral=True,
                     embed=None,
@@ -64,7 +64,7 @@ async def awaitResponse(repetition, userid, buttons):
             await initial_message.add_files(sent_file)
             embed.set_field_at(0, name="Status", value="Completed")
             if(buttons == "upscale"):
-                view = ImageButtons(output)
+                view = ImageButtons([f"upscale {url[-12:]}" for url in output])
             else:
                 view = None
             await initial_message.edit(

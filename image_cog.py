@@ -5,7 +5,7 @@ from discord.ext import commands
 from ui_utils import ImageEmbed
 from dotenv import load_dotenv
 from PIL import Image
-import discord, runpod, asyncio, json, os, io, base64, cv2, numpy, re, requests
+import discord, runpod, asyncio, json, os, io, base64, cv2, numpy, requests
 
 # set up environment variables
 load_dotenv()
@@ -14,48 +14,27 @@ runpod.api_key = os.getenv("RUNPOD_API_KEY")
 flux = runpod.Endpoint(os.getenv("RUNPOD_FLUX_ENDPOINT"))
 schnell = runpod.Endpoint(os.getenv("RUNPOD_SCHNELL_ENDPOINT"))
 upscale = runpod.Endpoint(os.getenv("RUNPOD_UPSCALE_ENDPOINT"))
-# controlnet = runpod.Endpoint(os.getenv("RUNPOD_CONTROLNET_ENDPOINT"))x
+# controlnet = runpod.Endpoint(os.getenv("RUNPOD_CONTROLNET_ENDPOINT"))
 
-with open("./styles.json", "r") as f:
-    style_dict = json.load(f)
-styles = list(style_dict.keys())
-if("Enhance" in styles):
-    styles.remove("Enhance")
-
-supported_ratios = [
-    [0.42857, "9:21",  (640, 1536)],
-    [0.50000, "1:2",   (704, 1472)],
-    [0.56250, "9:16",  (768, 1344)],
-    [0.66667, "2:3",   (832, 1280)],
-    [0.68421, "13:19", (832, 1216)],
-    [0.72727, "8:11",  (896, 1216)],
-    [0.75000, "3:4",   (896, 1152)],
-    [0.77778, "7:9",   (896, 1152)],
-    [1.00000, "1:1",   (1024, 1024)],
-    [1.28571, "9:7",   (1152, 896)],
-    [1.33333, "4:3",   (1152, 896)],
-    [1.37500, "11:8",  (1216, 896)],
-    [1.46154, "19:13", (1216, 832)],
-    [1.50000, "3:2",   (1280, 832)],
-    [1.77778, "16:9",  (1344, 768)],
-    [2.00000, "2:1",   (1472, 704)],
-    [2.33333, "21:9",  (1536, 640)]
-]
-
-
-# instantiate the controlnet preprocessors
-# depthPreprocessor = Processor("depth_midas")
-# openposePreprocessor = Processor("openpose")
-# openposeFacePreprocessor = Processor("openpose_face")
-# openposeHandPreprocessor = Processor("openpose_hand")
-# openposeFullPreprocessor = Processor("openpose_full")
-# preprocessors = {
-#     "Canny Edge": depthPreprocessor,
-#     "Depth Map": openposePreprocessor,
-#     "Openpose (With Face)": openposeFacePreprocessor,
-#     "Openpose (Hands Only)": openposeHandPreprocessor,
-#     "Openpose (Full)": openposeFullPreprocessor
-# }
+supported_ratios = {
+    "9:21":  (640, 1536),
+    "1:2":   (704, 1472),
+    "9:16":  (768, 1344),
+    "2:3":   (832, 1280),
+    "13:19": (832, 1216),
+    "8:11":  (896, 1216),
+    "3:4":   (896, 1152),
+    "7:9":   (896, 1152),
+    "1:1":   (1024, 1024),
+    "9:7":   (1152, 896),
+    "4:3":   (1152, 896),
+    "11:8":  (1216, 896),
+    "19:13": (1216, 832),
+    "3:2":   (1280, 832),
+    "16:9":  (1344, 768),
+    "2:1":   (1472, 704),
+    "21:9":  (1536, 640)
+}
 
 class ImageCog(commands.Cog):
     def __init__(self, client):
@@ -64,7 +43,6 @@ class ImageCog(commands.Cog):
         self,
         interaction: discord.Interaction, 
         prompt: str, 
-        style: str=None, 
         negative_prompt: str=None, 
         aspect_ratio: str=1.0, 
         repeat: int=1, 
@@ -85,6 +63,10 @@ class ImageCog(commands.Cog):
             )
             return
         
+        # aspect ratio
+        res_info = supported_ratios[aspect_ratio]
+        width, height = res_info
+
         # if there is a 'name' key in the conditioning dict
         # that means this is a controlnet job
         cn_model = None
@@ -106,7 +88,7 @@ class ImageCog(commands.Cog):
 
         userid = interaction.user.id
         repetitions = []
-
+        
         # positive prompt
         # if(style == "Enhance" or style == None):
         #     template = style_dict["Enhance"]
@@ -119,10 +101,6 @@ class ImageCog(commands.Cog):
         #     true_negative_prompt = f"{template['negative']}, {negative_prompt}"
         # else:
         #     true_negative_prompt = negative_prompt
-        
-        # aspect ratio
-        res_info = min(supported_ratios, key=lambda x:abs(x[0] - aspect_ratio))
-        width, height = res_info[2]
 
         # repetitions
         for i in range(repeat):
@@ -131,11 +109,9 @@ class ImageCog(commands.Cog):
                 statsus, 
                 (0, 255, 255), 
                 prompt, 
-                style, 
                 negative_prompt,
                 aspect_ratio,
-                res_info[1],
-                res_info[2]
+                (width, height)
             )
             await interaction.followup.send(
                 f"<@{userid}> Request processing...",
@@ -160,7 +136,7 @@ class ImageCog(commands.Cog):
                 "num_images": num_images,
                 "width": width,
                 "height": height,
-                "images_id": conditioning.get("image", None),
+                "image_id": conditioning.get("image", None),
                 "model": cn_model
             }
             if(cn_model):
@@ -184,26 +160,21 @@ class ImageCog(commands.Cog):
         await asyncio.gather(*(awaitResponse(repetition, userid, "upscale") for repetition in repetitions))
     
     @app_commands.command(name="imagine")
-    @app_commands.describe(style="Style your image")
     @app_commands.choices(
-        style=[app_commands.Choice(name=style, value=style) for style in styles],
-        aspect_ratio=[app_commands.Choice(name=ratio[1], value=ratio[0]) for ratio in supported_ratios]
+        aspect_ratio=[app_commands.Choice(name=ratio, value=ratio) for ratio in supported_ratios.keys()]
     )
     async def imagine(
         self,
         interaction: discord.Interaction, 
         prompt: str, 
-        style: str="", 
-        negative_prompt: str=None, 
-        aspect_ratio: float=1., 
+        aspect_ratio: str="1:1", 
         repeat: int=1
     ):
         await interaction.response.defer()
         await self.generate_image(
             interaction, 
             prompt,
-            style, 
-            negative_prompt, 
+            None, 
             aspect_ratio, 
             repeat, 
             {},
@@ -211,26 +182,21 @@ class ImageCog(commands.Cog):
         )
     
     @app_commands.command(name="flux")
-    @app_commands.describe(style="Style your image")
     @app_commands.choices(
-        style=[app_commands.Choice(name=style, value=style) for style in styles],
-        aspect_ratio=[app_commands.Choice(name=ratio[1], value=ratio[0]) for ratio in supported_ratios]
+        aspect_ratio=[app_commands.Choice(name=ratio, value=ratio) for ratio in supported_ratios.keys()]
     )
-    async def imagine(
+    async def flux(
         self,
         interaction: discord.Interaction, 
         prompt: str, 
-        style: str="", 
-        negative_prompt: str=None, 
-        aspect_ratio: float=1., 
+        aspect_ratio: str="1:1", 
         repeat: int=1
     ):
         await interaction.response.defer()
         await self.generate_image(
             interaction, 
             prompt,
-            style, 
-            negative_prompt, 
+            None, 
             aspect_ratio, 
             repeat, 
             {},
@@ -246,11 +212,13 @@ class ImageCog(commands.Cog):
         message = interaction.message
         userid = interaction.user.id
         # check if it's an upscale request
-        return
-        if(re.match(f"^upscale_\d$", custom_id)):
+        if(custom_id.split(" ")[0] == "upscale"):
+            await interaction.response.defer()
             # get message data
             fields  = message.embeds[0].fields
             prompt = None
+
+            url = custom_id.split(" ")[1]
 
             # grab prompt
             for field in fields:
@@ -258,7 +226,7 @@ class ImageCog(commands.Cog):
                     prompt = field.value
                     break
             if(prompt == None):
-                await interaction.response.send_message("Unable to load prompt from original message.", ephemeral=True)
+                await interaction.followup.send("Unable to load prompt from original message.", ephemeral=True)
                 return
             
             # grab negative prompt
@@ -271,39 +239,20 @@ class ImageCog(commands.Cog):
             # grab aspect ratio
             aspect_ratio = ""
             for field in fields:
-                if(field.name == "Quantized Aspect Ratio"):
+                if(field.name == "Aspect Ratio"):
                     aspect_ratio = field.value
                     break
-            if(not aspect_ratio in [ratio[1] for ratio in supported_ratios]):
-                aspect_ratio = "1:1"
-
-            # grab style
-            style = "Enhance"
-            for field in fields:
-                if(field.name == "Style" and field.value != "None" and field.value != None):
-                    style = field.value
-                    break
-            
-            # grab image
-            try:
-                response  = requests.get(message.attachments[0].url)
-                response.raise_for_status()
-            except Exception as e:
-                await interaction.followup.send("Failed to get image.", ephemeral=True)
-                return
-            image_binary = response.content
-            image = Image.open(io.BytesIO(image_binary))
 
             # generation request
-            self.generate_image(
-                interaction,
-                prompt,
-                style,
-                negative_prompt,
-                aspect_ratio,
-                1,
-                {
-                    "name": "upscale",
-                    "conditioning": image
-                }
+            await self.generate_image(
+                interaction=interaction,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                aspect_ratio=aspect_ratio,
+                repeat=1,
+                conditioning={
+                    "conditioning": url,
+                    "image": url
+                },
+                model=None
             )
