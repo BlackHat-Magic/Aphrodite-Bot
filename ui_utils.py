@@ -40,7 +40,7 @@ class ImageButtons(discord.ui.View):
         # add buttons
         for i, id_ in enumerate(image_ids):
             self.add_item(Button(
-                style=ButtonStyle.Primary, 
+                style=ButtonStyle.primary, 
                 label=f"U{i+1}", 
                 custom_id=id_,
                 row=(0 if i+1 < num_images / 2 + 1 else 1),

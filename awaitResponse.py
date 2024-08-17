@@ -1,6 +1,6 @@
 from ui_utils import ImageButtons
 from PIL import Image
-import asyncio, io, base64, discord
+import asyncio, io, base64, discord, requests
 
 async def awaitResponse(repetition, userid, buttons):
     while(True):
@@ -28,35 +28,20 @@ async def awaitResponse(repetition, userid, buttons):
             if(type(output) != list):
                 output = [output]
                 # try to load the image from s3 URL
-                try:
-                    response = requests.get(output)
+            try:
+                responses = [requests.get(url) for url in output]
+                for response in responses:
                     response.raise_for_status()
-                    images = [Image.open(io.BytesIO(response.content))]
-                # else inform the user of the error and break
-                except Exception as e:
-                    initial_message.edit(
-                        content=f"Error retrieving output image: {e}",
-                        ephemeral=True,
-                        embed=None,
-                        view=None
-                    )
-                    break
-            # if there's multiple images...
-            else:
-                # try to load
-                try:
-                    response = requests.get(output)
-                    response.raise_for_status
-                    images = [Image.open(io.BytesIO(item.content)) for item in response.content]
-                # inform of error otherwise
-                except Exception as e:
-                    initial_message.edit(
-                        content=f"Error retrieving output images: {e}",
-                        ephemeral=True,
-                        embed=None,
-                        view=None
-                    )
-                    break
+                images = [Image.open(io.BytesIO(response.content)) for response in responses]
+            # else inform the user of the error and break
+            except Exception as e:
+                initial_message.edit(
+                    content=f"Error retrieving output image: {e}",
+                    # ephemeral=True,
+                    embed=None,
+                    view=None
+                )
+                break
             
             # create image grid
             width, height = images[0].size
@@ -97,7 +82,7 @@ async def awaitResponse(repetition, userid, buttons):
                 content="Image generation failed.",
                 embed=None,
                 view=None,
-                ephemeral=True
+                # ephemeral=True
             )
             break
         await asyncio.sleep(1)

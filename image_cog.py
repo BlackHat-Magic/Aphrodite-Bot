@@ -10,11 +10,11 @@ import discord, runpod, asyncio, json, os, io, base64, cv2, numpy, re, requests
 # set up environment variables
 load_dotenv()
 runpod.api_key = os.getenv("RUNPOD_API_KEY")
-generic = runpod.Endpoint(os.getenv("RUNPOD_GENERIC_ENDPOINT"))
+# generic = runpod.Endpoint(os.getenv("RUNPOD_GENERIC_ENDPOINT"))
 flux = runpod.Endpoint(os.getenv("RUNPOD_FLUX_ENDPOINT"))
 schnell = runpod.Endpoint(os.getenv("RUNPOD_SCHNELL_ENDPOINT"))
 upscale = runpod.Endpoint(os.getenv("RUNPOD_UPSCALE_ENDPOINT"))
-controlnet = runpod.Endpoint(os.getenv("RUNPOD_CONTROLNET_ENDPOINT"))
+# controlnet = runpod.Endpoint(os.getenv("RUNPOD_CONTROLNET_ENDPOINT"))x
 
 with open("./styles.json", "r") as f:
     style_dict = json.load(f)
@@ -108,20 +108,20 @@ class ImageCog(commands.Cog):
         repetitions = []
 
         # positive prompt
-        if(style == "Enhance" or style == None):
-            template = style_dict["Enhance"]
-        else:
-            template = style_dict[style]
-        true_prompt = template["positive"].format(prompt=prompt)
+        # if(style == "Enhance" or style == None):
+        #     template = style_dict["Enhance"]
+        # else:
+        #     template = style_dict[style]
+        # true_prompt = template["positive"].format(prompt=prompt)
 
         # negative prompt
-        if(negative_prompt and style != "Raw Prompt"):
-            true_negative_prompt = f"{template['negative']}, {negative_prompt}"
-        else:
-            true_negative_prompt = negative_prompt
+        # if(negative_prompt and style != "Raw Prompt"):
+        #     true_negative_prompt = f"{template['negative']}, {negative_prompt}"
+        # else:
+        #     true_negative_prompt = negative_prompt
         
         # aspect ratio
-        res_info = min(supported_ratios, key=lambda x:abs(x[0] - desired_ratio))
+        res_info = min(supported_ratios, key=lambda x:abs(x[0] - aspect_ratio))
         width, height = res_info[2]
 
         # repetitions
@@ -149,13 +149,18 @@ class ImageCog(commands.Cog):
             else:
                 initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
             
+            if(model == "flux"):
+                num_images = 1
+            else:
+                num_images = 4
+
             payload = {
-                "prompt": true_prompt,
-                "negative_prompt": true_negative_prompt,
-                "num_images": 4,
+                "prompt": prompt,
+                "negative_prompt": negative_prompt,
+                "num_images": num_images,
                 "width": width,
                 "height": height,
-                "images_id": conditioning["image"],
+                "images_id": conditioning.get("image", None),
                 "model": cn_model
             }
             if(cn_model):
@@ -188,12 +193,11 @@ class ImageCog(commands.Cog):
         self,
         interaction: discord.Interaction, 
         prompt: str, 
-        style: str=None, 
+        style: str="", 
         negative_prompt: str=None, 
-        aspect_ratio: str=None, 
+        aspect_ratio: float=1., 
         repeat: int=1
     ):
-        print(type(interaction))
         await interaction.response.defer()
         await self.generate_image(
             interaction, 
@@ -202,93 +206,36 @@ class ImageCog(commands.Cog):
             negative_prompt, 
             aspect_ratio, 
             repeat, 
-            None
+            {},
+            "schnell"
         )
     
-    # @app_commands.command(name="controlnet")
-    # @app_commands.describe(style="Style your image", image_url="The URL of the PREPROCESSED image to be used for conditioning. istg if you message me about controlnet looking wonky and I find out you're not preprocessing the images with the /preprocess command, I will personally remove your spine. rtfm.")
-    # @app_commands.choices(
-    #     style=[app_commands.Choice(name=style, value=style) for style in styles],
-    #     aspect_ratio=[app_commands.Choice(name=ratio[1], value=ratio[1]) for ratio in supported_ratios],
-    #     preprocessor=[app_commands.Choice(name=preprocessor, value=preprocessor.split(" ")[0].casefold()) for preprocessor in preprocessors.keys()]
-    # )
-    async def controlnet_command(
+    @app_commands.command(name="flux")
+    @app_commands.describe(style="Style your image")
+    @app_commands.choices(
+        style=[app_commands.Choice(name=style, value=style) for style in styles],
+        aspect_ratio=[app_commands.Choice(name=ratio[1], value=ratio[0]) for ratio in supported_ratios]
+    )
+    async def imagine(
         self,
         interaction: discord.Interaction, 
         prompt: str, 
-        image_url: str,
-        # preprocessor: str,
-        style: str=None, 
+        style: str="", 
         negative_prompt: str=None, 
-        aspect_ratio: str=None, 
+        aspect_ratio: float=1., 
         repeat: int=1
     ):
-        preprocessor = "canny"
         await interaction.response.defer()
-        
-        # obtain image
-        try:
-            response = requests.get(image_url)
-            response.raise_for_status()
-            image = Image.open(io.BytesIO(response.content)).convert("RGB")
-        except Exception as e:
-            await interaction.followup.send(
-                f"Image failed to load. ({e})", 
-                ephemeral=True
-            )
-            return
-
         await self.generate_image(
             interaction, 
+            prompt,
             style, 
             negative_prompt, 
             aspect_ratio, 
             repeat, 
-            {
-                "name": f"controlnet_{preprocessor}",
-                "conditioning": image
-            }
+            {},
+            "flux"
         )
-    
-    # @app_commands.command(name="preprocess")
-    # @app_commands.choices(
-    #     preprocessor=[app_commands.Choice(name=preprocessor, value=preprocessor) for preprocessor in preprocessors.keys()]
-    # )
-    # async def preprocessCommand(self, interaction: discord.Interaction, image_url: str, preprocessor: str):
-    async def preprocessCommand(self, interaction: discord.Interaction, image_url: str):
-        await interaction.response.defer()
-        try:
-            response = requests.get(image_url)
-            response.raise_for_status()
-            image = Image.open(io.BytesIO(response.content)).convert("RGB")
-        except Exception as e:
-            await interaction.response.send_message(f"Image failed to load. ({e})", ephemeral=True)
-            return
-
-        # paste
-        width, height = image.size
-        resize_ratio = 512 / min(width, height)
-        image = image.resize((int(resize_ratio * width), int(resize_ratio * height)))
-        arr_image = numpy.array(image)
-
-        is_PIL = False
-        loop = asyncio.get_event_loop()
-        
-        await initial_message.edit(content="Preprocessor model selected.")
-        preprocessed = await loop.run_in_executor(None, lambda: cv2.Canny(arr_image, 100, 200))
-        
-        await initial_message.edit(content="Preprocessor model selected.")
-        
-        with io.BytesIO() as image_binary:
-            if(not bool(is_PIL)):
-                preprocessed = Image.fromarray(preprocessed)
-            preprocessed.save(image_binary, "PNG")
-            image_binary.seek(0)
-            sent_file = discord.File(fp=image_binary, filename="preprocessed.png")
-        
-        await interaction.followup.send("Image processed.")
-        initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
-        await initial_message.add_files(sent_file)
 
     @commands.Cog.listener()
     async def on_interaction(self, interaction):
@@ -299,7 +246,6 @@ class ImageCog(commands.Cog):
         message = interaction.message
         userid = interaction.user.id
         # check if it's an upscale request
-        print(interaction.data)
         return
         if(re.match(f"^upscale_\d$", custom_id)):
             # get message data
@@ -344,7 +290,6 @@ class ImageCog(commands.Cog):
                 response.raise_for_status()
             except Exception as e:
                 await interaction.followup.send("Failed to get image.", ephemeral=True)
-                print(e)
                 return
             image_binary = response.content
             image = Image.open(io.BytesIO(image_binary))
