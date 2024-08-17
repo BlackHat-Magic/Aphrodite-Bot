@@ -131,11 +131,16 @@ class ImageCog(commands.Cog):
                 num_images = 1
             else:
                 num_images = 4
+            if(model == "schnell"):
+                steps = 4
+            else:
+                steps = 30
 
             payload = {
                 "prompt": prompt,
                 "negative_prompt": negative_prompt,
                 "num_images": num_images,
+                "steps": steps,
                 "width": width,
                 "height": height,
                 "image_id": conditioning.get("image", None),
