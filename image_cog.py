@@ -81,6 +81,8 @@ class ImageCog(commands.Cog):
         elif(conditioning):
             statsus = "Upscale Job"
             color = (128, 0, 255)
+            width *= 4
+            height *= 4
         # if no conditioning, image job
         else:
             statsus = "Image Job"
