@@ -132,7 +132,7 @@ class ImageCog(commands.Cog):
             else:
                 num_images = 4
             if(model == "schnell"):
-                steps = 4
+                steps = 6
             else:
                 steps = 30
 
