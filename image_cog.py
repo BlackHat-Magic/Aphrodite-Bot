@@ -132,9 +132,14 @@ class ImageCog(commands.Cog):
             else:
                 num_images = 4
             if(model == "schnell"):
-                steps = 6
+                steps = 20
+                guidance = 0.0
+            elif(model == "flux"):
+                steps = 30
+                guidance = 5.0
             else:
                 steps = 30
+                guidance = 7.5
 
             payload = {
                 "prompt": prompt,
@@ -144,7 +149,8 @@ class ImageCog(commands.Cog):
                 "width": width,
                 "height": height,
                 "image_id": conditioning.get("image", None),
-                "model": cn_model
+                "model": cn_model,
+                "guidance": guidance
             }
             if(cn_model):
                 run_request = controlnet.run(payload)
