@@ -126,31 +126,14 @@ class ImageCog(commands.Cog):
                     initial_message = message
             else:
                 initial_message = await interaction.channel.fetch_message(interaction.channel.last_message_id)
-            
-            if(model == "flux"):
-                num_images = 1
-            else:
-                num_images = 4
-            if(model == "schnell"):
-                steps = 4
-                guidance = 0.0
-            elif(model == "flux"):
-                steps = 30
-                guidance = 5.0
-            else:
-                steps = 30
-                guidance = 7.5
 
             payload = {
                 "prompt": prompt,
                 "negative_prompt": negative_prompt,
-                "num_images": num_images,
-                "steps": steps,
                 "width": width,
                 "height": height,
                 "image_id": conditioning.get("image", None),
                 "model": cn_model,
-                "guidance": guidance
             }
             if(cn_model):
                 run_request = controlnet.run(payload)
