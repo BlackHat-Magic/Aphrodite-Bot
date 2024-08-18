@@ -132,7 +132,7 @@ class ImageCog(commands.Cog):
             else:
                 num_images = 4
             if(model == "schnell"):
-                steps = 20
+                steps = 4
                 guidance = 0.0
             elif(model == "flux"):
                 steps = 30
