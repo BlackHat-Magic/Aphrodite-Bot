@@ -3,11 +3,10 @@ from discord import ButtonStyle, SelectOption
 import discord
 
 class ImageEmbed(discord.Embed):
-    def __init__(self, title, rgb, prompt, negative_prompt, aspect_ratio, resolution):
+    def __init__(self, title, rgb, prompt, aspect_ratio, resolution):
         super().__init__(title=title, color=discord.Color.from_rgb(*(rgb)))
         self.add_field(name="Status", value="In queue...", inline=True)
         self.add_field(name="Prompt", value=prompt, inline=False)
-        self.add_field(name="Negative Prompt", value=negative_prompt if negative_prompt else "N/A", inline=False)
         self.add_field(name="Aspect Ratio", value=aspect_ratio, inline=True)
         self.add_field(name="Resolution", value="{}x{}".format(*resolution), inline=True)
 

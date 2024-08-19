@@ -111,7 +111,6 @@ class ImageCog(commands.Cog):
                 statsus, 
                 (0, 255, 255), 
                 prompt, 
-                negative_prompt,
                 aspect_ratio,
                 (width, height)
             )
@@ -153,7 +152,7 @@ class ImageCog(commands.Cog):
                 "uploaded": False
             })
 
-        await asyncio.gather(*(awaitResponse(repetition, userid, "upscale") for repetition in repetitions))
+        await asyncio.gather(*(awaitResponse(repetition, userid, "upscale" if statsus != "Upscale Job" else None) for repetition in repetitions))
     
     @app_commands.command(name="imagine")
     @app_commands.choices(
