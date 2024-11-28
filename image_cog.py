@@ -47,7 +47,8 @@ class ImageCog(commands.Cog):
         aspect_ratio: str=1.0, 
         repeat: int=1, 
         conditioning: dict=None,
-        model: str=None
+        model: str=None,
+        request_type: str="image"
     ):
         # invalid stuff
         if(repeat > 8):
@@ -67,26 +68,34 @@ class ImageCog(commands.Cog):
         res_info = supported_ratios[aspect_ratio]
         width, height = res_info
 
-        # if there is a 'name' key in the conditioning dict
-        # that means this is a controlnet job
         cn_model = None
-        if("name" in conditioning.keys()):
-            image = conditioning["conditioning"]
-            if("controlnet" in conditioning["name"]):
-                cn_model = conditioning["name"].split("_")[0]
-            statsus = "Controlnet Job"
+        if(request_type == "controlnet"):
+            cn_model = conditioning["name"].split("_")[0]
+            conditioning_image = conditioning["conditioning"]
+            image = conditioning.get("image", None)
+            if(image):
+                statsus = "Controlnet Inpaint Job"
+            else:
+                statsus = "Controlnet Job"
             color = (255, 128, 0)
-        # otherwise, the only other type of request that has
-        # conditioning is upscaling
-        elif(conditioning):
-            statsus = "Upscale Job"
+        elif(request_type == "upscale"):
+            image = conditioning["image"]
             color = (128, 0, 255)
+            statsus = "Upscale Job"
             width *= 4
             height *= 4
-        # if no conditioning, image job
+        elif(request_type == "inpaint"):
+            image = conditioning["image"]
+            mask = conditioning["mask"]
+            color = (255, 255, 255)
+            statsus = "Inpaint Job"
+        elif(request_type == "outpaint"):
+            image = conditioning["image"]
+            color = (128, 128, 128)
+            statsus = "Outpaint Job"
         else:
-            statsus = "Image Job"
             color = (0, 255, 255)
+            statsus = "Image Job"
 
         userid = interaction.user.id
         repetitions = []
@@ -121,16 +130,20 @@ class ImageCog(commands.Cog):
                 "image_id": conditioning.get("image", None),
                 "model": cn_model,
             }
-            if(cn_model):
+            if(request_type == "controlnet"):
                 run_request = controlnet.run(payload)
-            elif(conditioning):
+            elif(request_type == "upscale"):
                 run_request = upscale.run(payload)
-            elif(model == "flux"):
+            elif(model in ["flux", None]):
                 run_request = flux.run(payload)
             elif(model == "schnell"):
                 run_request = schnell.run(payload)
             else:
-                run_request = generic.run(payload)
+                initial_message.edit(
+                    content="Unrecognized model.",
+                    embed=None,
+                    view=None
+                )
             repetitions.append({
                 "message": initial_message,
                 "runpod_request": run_request,
