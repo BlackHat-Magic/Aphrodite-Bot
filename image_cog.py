@@ -96,7 +96,7 @@ class ImageCog(commands.Cog):
             # send embed
             embed = ImageEmbed(
                 statsus, 
-                (0, 255, 255), 
+                color, 
                 prompt, 
                 aspect_ratio,
                 (width, height)
