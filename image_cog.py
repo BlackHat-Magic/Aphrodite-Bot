@@ -193,14 +193,13 @@ class ImageCog(commands.Cog):
         custom_id = interaction.data["custom_id"]
         message = interaction.message
         userid = interaction.user.id
+        request_type, url = custom_id.split(" ")
         # check if it's an upscale request
-        if(custom_id.split(" ")[0] == "upscale"):
+        if(request_type == "upscale"):
             await interaction.response.defer()
             # get message data
             fields  = message.embeds[0].fields
             prompt = None
-
-            url = custom_id.split(" ")[1]
 
             # grab prompt
             for field in fields:
