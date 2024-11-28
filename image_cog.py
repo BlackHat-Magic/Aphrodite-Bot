@@ -90,19 +90,6 @@ class ImageCog(commands.Cog):
 
         userid = interaction.user.id
         repetitions = []
-        
-        # positive prompt
-        # if(style == "Enhance" or style == None):
-        #     template = style_dict["Enhance"]
-        # else:
-        #     template = style_dict[style]
-        # true_prompt = template["positive"].format(prompt=prompt)
-
-        # negative prompt
-        # if(negative_prompt and style != "Raw Prompt"):
-        #     true_negative_prompt = f"{template['negative']}, {negative_prompt}"
-        # else:
-        #     true_negative_prompt = negative_prompt
 
         # repetitions
         for i in range(repeat):
