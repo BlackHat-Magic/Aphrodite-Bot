@@ -43,6 +43,15 @@ async def awaitResponse(repetition, userid, buttons):
                 )
                 break
             
+            if buttons != "upscale":
+                embed.set_field_at(0, name="Status", value="Completed")
+                embed.set_image(url=output[0])
+                await initial_message.edit(
+                    content=f"<@{userid}> Request completed.\n{output[0]}",
+                    embed=embed
+                )
+                return
+            
             # create image grid
             width, height = images[0].size
             if(len(images) == 1):
@@ -63,14 +72,10 @@ async def awaitResponse(repetition, userid, buttons):
             # send image and update embed
             await initial_message.add_files(sent_file)
             embed.set_field_at(0, name="Status", value="Completed")
-            if(buttons == "upscale"):
-                view = ImageButtons([f"upscale {url[-12:]}" for url in output])
-            else:
-                view = None
             await initial_message.edit(
                 content=f"<@{userid}> Request completed.",
                 embed=embed,
-                view=view
+                view=None
             )
             repetition["uploaded"] = True
             break
