@@ -51,6 +51,7 @@ async def awaitResponse(repetition, userid, buttons):
                     embed=embed
                 )
                 return
+            view = ImageButtons([f"upscale {url[-12:]}" for url in output])
             
             # create image grid
             width, height = images[0].size
@@ -75,7 +76,7 @@ async def awaitResponse(repetition, userid, buttons):
             await initial_message.edit(
                 content=f"<@{userid}> Request completed.",
                 embed=embed,
-                view=None
+                view=view
             )
             repetition["uploaded"] = True
             break
