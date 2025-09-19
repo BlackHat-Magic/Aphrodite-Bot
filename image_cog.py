@@ -248,5 +248,6 @@ class ImageCog(commands.Cog):
                     "conditioning": url,
                     "image": url
                 },
-                model=None
+                model=None,
+                request_type="upscale"
             )
